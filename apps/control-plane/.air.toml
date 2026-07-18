@@ -1,0 +1,19 @@
+root = "."
+tmp_dir = ".air"
+
+[build]
+cmd = "go build -o ./.air/kubequeue ./cmd/${KUBEQUEUE_PROCESS}"
+bin = "./.air/kubequeue"
+delay = 300
+exclude_dir = [".air", "vendor"]
+exclude_regex = ["_test.go"]
+include_ext = ["go", "sum"]
+kill_delay = "500ms"
+send_interrupt = true
+stop_on_error = true
+
+[log]
+time = true
+
+[misc]
+clean_on_exit = true

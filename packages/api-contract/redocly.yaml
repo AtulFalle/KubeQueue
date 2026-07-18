@@ -1,0 +1,9 @@
+extends:
+  - recommended
+
+rules:
+  operation-description: warn
+  operation-operationId: error
+  operation-summary: error
+  security-defined: error
+  tag-description: warn

@@ -1,0 +1,82 @@
+{
+  "name": "deploy",
+  "$schema": "../node_modules/nx/schemas/project-schema.json",
+  "projectType": "application",
+  "root": "deploy",
+  "implicitDependencies": ["web", "control-plane"],
+  "tags": ["type:deploy", "scope:platform"],
+  "targets": {
+    "lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "commands": [
+          "docker compose config --quiet",
+          "helm lint deploy/helm/kubequeue",
+          "helm template kubequeue deploy/helm/kubequeue"
+        ],
+        "parallel": false
+      }
+    },
+    "dev-stack": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "continuous": true,
+      "options": {
+        "command": "docker compose up --build --watch"
+      }
+    },
+    "dev-down": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "docker compose down --remove-orphans"
+      }
+    },
+    "dev-logs": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "continuous": true,
+      "options": {
+        "command": "docker compose logs --follow"
+      }
+    },
+    "dev-docs": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "continuous": true,
+      "options": {
+        "command": "docker compose up api-docs"
+      }
+    },
+    "helm-lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "helm lint deploy/helm/kubequeue"
+      }
+    },
+    "helm-template": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "helm template kubequeue deploy/helm/kubequeue"
+      }
+    },
+    "kind-create": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "kind create cluster --config deploy/kind/cluster.yaml"
+      }
+    },
+    "kind-delete": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "kind delete cluster --name kubequeue"
+      }
+    },
+    "tilt": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "tilt up"
+      }
+    }
+  }
+}
