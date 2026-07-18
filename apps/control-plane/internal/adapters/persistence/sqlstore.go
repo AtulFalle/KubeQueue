@@ -134,7 +134,9 @@ func (s *Store) Create(ctx context.Context, input domain.CreateJob) (domain.Job,
 		ID: uuid.NewString(), ParentID: input.ParentID, Name: input.Name,
 		Namespace: input.Namespace, Team: input.Team,
 		Priority: input.Priority, DesiredState: domain.StateQueued,
-		ObservedState: domain.StateCreated, ScheduledFor: input.ScheduledFor,
+		ObservedState: domain.StateCreated, ManagementMode: domain.ManagementManaged,
+		SyncStatus: domain.SyncStatusPending, ActionPending: true,
+		PendingAction: string(domain.StateQueued), ScheduledFor: input.ScheduledFor,
 		Template: input.Template, Attempt: input.Attempt, Version: 1, CreatedAt: now, UpdatedAt: now,
 	}
 	if job.Attempt == 0 {
@@ -170,7 +172,7 @@ func (s *Store) Create(ctx context.Context, input domain.CreateJob) (domain.Job,
 
 func (s *Store) retryForParent(ctx context.Context, parentID string) (domain.Job, error) {
 	job, err := scanJob(s.db.QueryRowContext(ctx, s.bind(
-		`SELECT `+jobColumns+` FROM jobs WHERE parent_id=?`), parentID))
+		`SELECT `+jobColumns+` FROM jobs WHERE parent_id=? AND archived_at IS NULL`), parentID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.Job{}, ports.ErrNotFound
 	}
@@ -186,6 +188,12 @@ func (s *Store) Adopt(ctx context.Context, job domain.Job) (domain.Job, error) {
 	}
 	if job.Attempt == 0 {
 		job.Attempt = 1
+	}
+	if job.ManagementMode == "" {
+		job.ManagementMode = domain.ManagementObserved
+	}
+	if job.SyncStatus == "" {
+		job.SyncStatus = domain.SyncStatusSynced
 	}
 	now := time.Now().UTC()
 	if job.CreatedAt.IsZero() {
@@ -230,17 +238,22 @@ func (s *Store) Adopt(ctx context.Context, job domain.Job) (domain.Job, error) {
 func (s *Store) insert(ctx context.Context, tx *sql.Tx, job domain.Job) error {
 	_, err := tx.ExecContext(ctx, s.bind(`INSERT INTO jobs
 		(id,parent_id,name,namespace,team,priority,position,desired_state,observed_state,scheduled_for,
-		 kubernetes_uid,template,attempt,version,created_at,updated_at)
-		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`),
+		 kubernetes_uid,template,attempt,version,created_at,updated_at,management_mode,sync_status,
+		 resource_version,last_seen_at,observed_at,observed_reason,observed_message,pending_action,
+		 last_error,reconcile_retries,next_reconcile_at,archived_at)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`),
 		job.ID, job.ParentID, job.Name, job.Namespace, job.Team, job.Priority, job.Position,
 		job.DesiredState, job.ObservedState, formatTime(job.ScheduledFor), job.KubernetesUID,
 		string(job.Template), job.Attempt, job.Version, job.CreatedAt.Format(time.RFC3339Nano),
-		job.UpdatedAt.Format(time.RFC3339Nano))
+		job.UpdatedAt.Format(time.RFC3339Nano), job.ManagementMode, job.SyncStatus,
+		job.ResourceVersion, formatTime(job.LastSeenAt), formatTime(job.ObservedAt),
+		job.ObservedReason, job.ObservedMessage, job.PendingAction, job.LastError,
+		job.ReconcileRetries, formatTime(job.NextReconcileAt), formatTime(job.ArchivedAt))
 	return err
 }
 
 func (s *Store) List(ctx context.Context, filter ports.JobFilter) ([]domain.Job, error) {
-	query := `SELECT ` + jobColumns + ` FROM jobs WHERE 1=1`
+	query := `SELECT ` + jobColumns + ` FROM jobs WHERE archived_at IS NULL`
 	args := make([]any, 0, 4)
 	if filter.Status != "" {
 		query += ` AND (desired_state = ? OR observed_state = ?)`
@@ -299,8 +312,10 @@ func (s *Store) SetDesiredState(ctx context.Context, id string, state domain.Sta
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	err = s.transaction(ctx, func(tx *sql.Tx) error {
 		result, err := tx.ExecContext(ctx, s.bind(
-			`UPDATE jobs SET desired_state=?, version=version+1, updated_at=? WHERE id=?`),
-			state, now, id)
+			`UPDATE jobs SET desired_state=?, sync_status='PENDING', pending_action=?,
+			 last_error='', reconcile_retries=0, next_reconcile_at=NULL,
+			 version=version+1, updated_at=? WHERE id=?`),
+			state, string(state), now, id)
 		if err != nil {
 			return err
 		}
@@ -316,25 +331,140 @@ func (s *Store) SetDesiredState(ctx context.Context, id string, state domain.Sta
 	return s.Get(ctx, id)
 }
 
-func (s *Store) SetObserved(ctx context.Context, id string, state domain.State, uid string) (domain.Job, error) {
+func (s *Store) SetObserved(
+	ctx context.Context, id string, observation domain.Observation,
+) (domain.Job, error) {
+	current, err := s.Get(ctx, id)
+	if err != nil {
+		return domain.Job{}, err
+	}
+	if observation.ObservedAt.IsZero() {
+		observation.ObservedAt = time.Now().UTC()
+	}
+	if observation.ManagementMode == "" {
+		observation.ManagementMode = current.ManagementMode
+	}
+	if observation.SyncStatus == "" {
+		observation.SyncStatus = domain.SynchronizationStatus(
+			current.DesiredState, observation.State,
+		)
+	}
 	now := time.Now().UTC().Format(time.RFC3339Nano)
-	err := s.transaction(ctx, func(tx *sql.Tx) error {
+	err = s.transaction(ctx, func(tx *sql.Tx) error {
 		result, err := tx.ExecContext(ctx, s.bind(
-			`UPDATE jobs SET observed_state=?, kubernetes_uid=CASE WHEN ?='' THEN kubernetes_uid ELSE ? END,
-			 version=version+1, updated_at=? WHERE id=?`), state, uid, uid, now, id)
+			`UPDATE jobs SET observed_state=?,
+			 kubernetes_uid=CASE WHEN ?='' THEN kubernetes_uid ELSE ? END,
+			 management_mode=?, sync_status=?, resource_version=?, last_seen_at=?, observed_at=?,
+			 observed_reason=?, observed_message=?,
+			 pending_action=CASE WHEN ?='SYNCED' THEN '' ELSE pending_action END,
+			 last_error='', reconcile_retries=0, next_reconcile_at=NULL,
+			 version=version+1, updated_at=?
+			 WHERE id=? AND resource_version=?`),
+			observation.State, observation.KubernetesUID, observation.KubernetesUID,
+			observation.ManagementMode, observation.SyncStatus, observation.ResourceVersion,
+			observation.ObservedAt.Format(time.RFC3339Nano),
+			observation.ObservedAt.Format(time.RFC3339Nano),
+			sanitizeDiagnostic(observation.Reason), sanitizeDiagnostic(observation.Message),
+			observation.SyncStatus, now, id, observation.ExpectedResourceVersion)
 		if err != nil {
 			return err
 		}
-		if count, err := result.RowsAffected(); err != nil || count == 0 {
-			return ports.ErrNotFound
+		count, err := result.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if count == 0 {
+			return nil
 		}
 		return s.addEvent(ctx, tx, id, "OBSERVED_STATE_CHANGED",
-			"Kubernetes state changed to "+string(state), nil)
+			"Kubernetes state changed to "+string(observation.State), nil)
 	})
 	if err != nil {
 		return domain.Job{}, err
 	}
 	return s.Get(ctx, id)
+}
+
+func (s *Store) MarkMissing(
+	ctx context.Context, id, expectedUID, expectedResourceVersion string, observedAt time.Time,
+) (domain.Job, error) {
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	err := s.transaction(ctx, func(tx *sql.Tx) error {
+		result, err := tx.ExecContext(ctx, s.bind(
+			`UPDATE jobs SET sync_status='MISSING', observed_at=?, version=version+1, updated_at=?
+			 WHERE id=? AND kubernetes_uid=? AND resource_version=? AND sync_status<>'MISSING'`),
+			observedAt.UTC().Format(time.RFC3339Nano), now, id, expectedUID,
+			expectedResourceVersion)
+		if err != nil {
+			return err
+		}
+		count, err := result.RowsAffected()
+		if err != nil || count == 0 {
+			return err
+		}
+		return s.addEvent(ctx, tx, id, "KUBERNETES_JOB_MISSING",
+			"Associated Kubernetes Job is missing", nil)
+	})
+	if err != nil {
+		return domain.Job{}, err
+	}
+	return s.Get(ctx, id)
+}
+
+func (s *Store) RecordReconcileError(
+	ctx context.Context, id, expectedResourceVersion, message string, nextRetry time.Time,
+) error {
+	result, err := s.db.ExecContext(ctx, s.bind(
+		`UPDATE jobs SET sync_status='ERROR', last_error=?, reconcile_retries=reconcile_retries+1,
+		 next_reconcile_at=?, version=version+1, updated_at=?
+		 WHERE id=? AND resource_version=?`),
+		sanitizeDiagnostic(message), nextRetry.UTC().Format(time.RFC3339Nano),
+		time.Now().UTC().Format(time.RFC3339Nano), id, expectedResourceVersion)
+	if err != nil {
+		return err
+	}
+	if count, err := result.RowsAffected(); err != nil || count == 0 {
+		if err != nil {
+			return err
+		}
+		return nil
+	}
+	return nil
+}
+
+func (s *Store) Archive(ctx context.Context, id string, archivedAt time.Time) error {
+	return s.transaction(ctx, func(tx *sql.Tx) error {
+		result, err := tx.ExecContext(ctx, s.bind(
+			`UPDATE jobs SET archived_at=?, pending_action='', version=version+1, updated_at=?
+			 WHERE id=? AND archived_at IS NULL`),
+			archivedAt.UTC().Format(time.RFC3339Nano),
+			archivedAt.UTC().Format(time.RFC3339Nano), id)
+		if err != nil {
+			return err
+		}
+		count, err := result.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if count == 0 {
+			var exists int
+			if err := tx.QueryRowContext(
+				ctx, s.bind(`SELECT COUNT(*) FROM jobs WHERE id=?`), id,
+			).Scan(&exists); err != nil {
+				return err
+			}
+			if exists == 0 {
+				return ports.ErrNotFound
+			}
+			return nil
+		}
+		if _, err := tx.ExecContext(
+			ctx, s.bind(`DELETE FROM scheduler_claims WHERE job_id=?`), id,
+		); err != nil {
+			return err
+		}
+		return s.addEvent(ctx, tx, id, "JOB_ARCHIVED", "Stale Job record archived", nil)
+	})
 }
 
 func (s *Store) UpdateQueue(
@@ -347,7 +477,8 @@ func (s *Store) UpdateQueue(
 	err := s.transaction(ctx, func(tx *sql.Tx) error {
 		result, err := tx.ExecContext(ctx, s.bind(
 			`UPDATE jobs SET priority=?, position=?, scheduled_for=?, version=version+1, updated_at=?
-			 WHERE id=? AND version=? AND desired_state IN ('QUEUED','PAUSED')`),
+			 WHERE id=? AND version=? AND management_mode='MANAGED'
+			 AND archived_at IS NULL AND desired_state IN ('QUEUED','PAUSED')`),
 			priority, position, formatTime(scheduledFor),
 			time.Now().UTC().Format(time.RFC3339Nano), id, version)
 		if err != nil {
@@ -393,7 +524,8 @@ func (s *Store) Reorder(ctx context.Context, ids []string, expectedVersion int64
 		for position, id := range ids {
 			result, err := tx.ExecContext(ctx, s.bind(
 				`UPDATE jobs SET position=?, version=version+1, updated_at=?
-				 WHERE id=? AND desired_state IN ('QUEUED','PAUSED')`),
+				 WHERE id=? AND management_mode='MANAGED'
+				 AND archived_at IS NULL AND desired_state IN ('QUEUED','PAUSED')`),
 				position+1, time.Now().UTC().Format(time.RFC3339Nano), id)
 			if err != nil {
 				return err
@@ -449,8 +581,10 @@ func (s *Store) Eligible(ctx context.Context, limit int) ([]domain.Job, error) {
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	rows, err := s.db.QueryContext(ctx, s.bind(`SELECT `+jobColumns+` FROM jobs
 		WHERE desired_state='QUEUED' AND observed_state IN ('CREATED','PAUSED')
+		AND management_mode='MANAGED' AND sync_status NOT IN ('MISSING','OUT_OF_SCOPE','CONFLICTED')
+		AND archived_at IS NULL AND (next_reconcile_at IS NULL OR next_reconcile_at<=?)
 		AND (scheduled_for IS NULL OR scheduled_for='' OR scheduled_for<=?)
-		ORDER BY priority DESC, position, created_at LIMIT ?`), now, limit)
+		ORDER BY priority DESC, position, created_at LIMIT ?`), now, now, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -497,13 +631,19 @@ func (s *Store) ClaimEligible(
 		query := `SELECT ` + prefixedJobColumns("j") + ` FROM jobs j
 			LEFT JOIN scheduler_claims c ON c.job_id=j.id
 			WHERE j.desired_state='QUEUED' AND j.observed_state IN ('CREATED','PAUSED')
+			AND j.management_mode='MANAGED'
+			AND j.sync_status NOT IN ('MISSING','OUT_OF_SCOPE','CONFLICTED')
+			AND j.archived_at IS NULL
+			AND (j.next_reconcile_at IS NULL OR j.next_reconcile_at<=?)
 			AND (j.scheduled_for IS NULL OR j.scheduled_for='' OR j.scheduled_for<=?)
 			AND c.job_id IS NULL
 			ORDER BY j.priority DESC,j.position,j.created_at LIMIT ?`
 		if s.postgres {
 			query += ` FOR UPDATE OF j SKIP LOCKED`
 		}
-		rows, err := tx.QueryContext(ctx, s.bind(query), now.Format(time.RFC3339Nano), limit)
+		rows, err := tx.QueryContext(
+			ctx, s.bind(query), now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano), limit,
+		)
 		if err != nil {
 			return err
 		}
@@ -576,7 +716,9 @@ func (s *Store) bind(query string) string {
 }
 
 const jobColumns = `id,parent_id,name,namespace,team,priority,position,desired_state,observed_state,
-	scheduled_for,kubernetes_uid,template,attempt,version,created_at,updated_at`
+	scheduled_for,kubernetes_uid,template,attempt,version,created_at,updated_at,management_mode,
+	sync_status,resource_version,last_seen_at,observed_at,observed_reason,observed_message,
+	pending_action,last_error,reconcile_retries,next_reconcile_at,archived_at`
 
 func prefixedJobColumns(prefix string) string {
 	columns := strings.Split(strings.ReplaceAll(jobColumns, "\n", ""), ",")
@@ -592,27 +734,42 @@ type scanner interface {
 
 func scanJob(row scanner) (domain.Job, error) {
 	var job domain.Job
-	var desired, observed, template, created, updated string
-	var scheduled sql.NullString
+	var desired, observed, management, syncStatus, template, created, updated string
+	var scheduled, lastSeen, observedAt, nextReconcile, archived sql.NullString
 	err := row.Scan(
 		&job.ID, &job.ParentID, &job.Name, &job.Namespace, &job.Team, &job.Priority, &job.Position,
 		&desired, &observed, &scheduled, &job.KubernetesUID, &template, &job.Attempt,
-		&job.Version, &created, &updated,
+		&job.Version, &created, &updated, &management, &syncStatus, &job.ResourceVersion,
+		&lastSeen, &observedAt, &job.ObservedReason, &job.ObservedMessage, &job.PendingAction,
+		&job.LastError, &job.ReconcileRetries, &nextReconcile, &archived,
 	)
 	if err != nil {
 		return domain.Job{}, err
 	}
 	job.DesiredState, job.ObservedState = domain.State(desired), domain.State(observed)
+	job.ManagementMode = domain.ManagementMode(management)
+	job.SyncStatus = domain.SyncStatus(syncStatus)
+	job.ActionPending = job.PendingAction != ""
 	job.Template = json.RawMessage(template)
-	if scheduled.Valid && scheduled.String != "" {
-		value, parseErr := time.Parse(time.RFC3339Nano, scheduled.String)
-		if parseErr == nil {
-			job.ScheduledFor = &value
-		}
-	}
+	job.ScheduledFor = parseTime(scheduled)
+	job.LastSeenAt = parseTime(lastSeen)
+	job.ObservedAt = parseTime(observedAt)
+	job.NextReconcileAt = parseTime(nextReconcile)
+	job.ArchivedAt = parseTime(archived)
 	job.CreatedAt, _ = time.Parse(time.RFC3339Nano, created)
 	job.UpdatedAt, _ = time.Parse(time.RFC3339Nano, updated)
 	return job, nil
+}
+
+func parseTime(value sql.NullString) *time.Time {
+	if !value.Valid || value.String == "" {
+		return nil
+	}
+	parsed, err := time.Parse(time.RFC3339Nano, value.String)
+	if err != nil {
+		return nil
+	}
+	return &parsed
 }
 
 func formatTime(value *time.Time) any {
@@ -620,4 +777,13 @@ func formatTime(value *time.Time) any {
 		return nil
 	}
 	return value.UTC().Format(time.RFC3339Nano)
+}
+
+func sanitizeDiagnostic(value string) string {
+	value = strings.Join(strings.Fields(value), " ")
+	const maxLength = 1024
+	if len(value) > maxLength {
+		return value[:maxLength]
+	}
+	return value
 }

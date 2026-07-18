@@ -61,19 +61,34 @@ func (r *Reconciler) Run(ctx context.Context) error {
 }
 
 func (r *Reconciler) Reconcile(ctx context.Context) error {
+	acquired, err := r.repository.AcquireSchedulerLease(
+		ctx, r.leaseHolder, 3*r.reconcileInterval,
+	)
+	if err != nil {
+		return fmt.Errorf("acquire reconciliation lease: %w", err)
+	}
+	if !acquired {
+		return nil
+	}
+	var reconcileErrors []error
 	for _, namespace := range r.namespaces {
 		if err := r.discover(ctx, namespace); err != nil {
-			return fmt.Errorf("discover namespace %s: %w", namespace, err)
+			reconcileErrors = append(
+				reconcileErrors, fmt.Errorf("discover namespace %s: %w", namespace, err),
+			)
 		}
 	}
 	jobs, err := r.repository.List(ctx, ports.JobFilter{})
 	if err != nil {
-		return err
+		return errors.Join(append(reconcileErrors, fmt.Errorf("list jobs: %w", err))...)
 	}
 	if err := r.applyCommands(ctx, jobs); err != nil {
-		return err
+		reconcileErrors = append(reconcileErrors, err)
 	}
-	return r.schedule(ctx, jobs)
+	if err := r.schedule(ctx, jobs); err != nil {
+		reconcileErrors = append(reconcileErrors, err)
+	}
+	return errors.Join(reconcileErrors...)
 }
 
 func (r *Reconciler) discover(ctx context.Context, namespace string) error {
@@ -82,42 +97,79 @@ func (r *Reconciler) discover(ctx context.Context, namespace string) error {
 		return err
 	}
 	seenUIDs := make(map[string]struct{}, len(jobs))
+	var discoveryErrors []error
 	for _, observed := range jobs {
-		seenUIDs[string(observed.UID)] = struct{}{}
-		state, _ := kube.StateOf(observed)
+		uid := string(observed.UID)
+		seenUIDs[uid] = struct{}{}
+		if kube.IsIgnored(observed) {
+			continue
+		}
+		state, reason, message := kube.ObservationOf(observed)
+		mode := kube.ManagementModeOf(observed)
+		observedAt := time.Now().UTC()
 		id := kube.JobID(observed)
 		if id == "" {
 			desired := state
-			if state == domain.StateRunning {
-				desired = domain.StateRunning
-			}
 			_, err := r.repository.Adopt(ctx, domain.Job{
 				Name: observed.Name, Namespace: namespace, Team: observed.Labels["team"],
-				DesiredState: desired, ObservedState: state, KubernetesUID: string(observed.UID),
+				DesiredState: desired, ObservedState: state, KubernetesUID: uid,
+				ManagementMode: mode, SyncStatus: domain.SyncStatusSynced,
+				ResourceVersion: observed.ResourceVersion, LastSeenAt: &observedAt,
+				ObservedAt: &observedAt, ObservedReason: reason, ObservedMessage: message,
 				Template: kube.Template(observed), Attempt: 1,
 			})
 			if err != nil {
-				return err
+				discoveryErrors = append(
+					discoveryErrors, fmt.Errorf("adopt Job %s/%s: %w", namespace, observed.Name, err),
+				)
 			}
 			continue
 		}
 		current, err := r.repository.Get(ctx, id)
 		if errors.Is(err, ports.ErrNotFound) {
 			_, err = r.repository.Adopt(ctx, domain.Job{
-				ID: id, Name: observed.Name, Namespace: namespace,
+				Name: observed.Name, Namespace: namespace,
 				Team: observed.Labels["team"], DesiredState: state, ObservedState: state,
-				KubernetesUID: string(observed.UID), Template: kube.Template(observed), Attempt: 1,
+				KubernetesUID: uid, ManagementMode: domain.ManagementConflicted,
+				SyncStatus: domain.SyncStatusConflicted, ResourceVersion: observed.ResourceVersion,
+				LastSeenAt: &observedAt, ObservedAt: &observedAt,
+				ObservedReason:  "UnknownDurableID",
+				ObservedMessage: "Job claims a KubeQueue ID that does not exist",
+				Template:        kube.Template(observed), Attempt: 1,
 			})
-		} else if err == nil && (current.ObservedState != state || current.KubernetesUID == "") {
-			_, err = r.repository.SetObserved(ctx, id, state, string(observed.UID))
+		} else if err == nil {
+			if current.Namespace != namespace || current.Name != observed.Name ||
+				(current.KubernetesUID != "" && current.KubernetesUID != uid) {
+				_, err = r.repository.SetObserved(ctx, id, domain.Observation{
+					State: current.ObservedState, ResourceVersion: observed.ResourceVersion,
+					ExpectedResourceVersion: current.ResourceVersion,
+					Reason:                  "IdentityConflict",
+					Message:                 "Kubernetes identity does not match the durable Job association",
+					ObservedAt:              observedAt, ManagementMode: domain.ManagementConflicted,
+					SyncStatus: domain.SyncStatusConflicted,
+				})
+			} else {
+				if current.ManagementMode == domain.ManagementManaged {
+					mode = domain.ManagementManaged
+				}
+				_, err = r.repository.SetObserved(ctx, id, domain.Observation{
+					State: state, KubernetesUID: uid, ResourceVersion: observed.ResourceVersion,
+					ExpectedResourceVersion: current.ResourceVersion, Reason: reason, Message: message,
+					ObservedAt: observedAt, ManagementMode: mode,
+				})
+			}
 		}
 		if err != nil {
-			return err
+			jobErr := fmt.Errorf("observe Job %s/%s: %w", namespace, observed.Name, err)
+			if current.ID != "" {
+				jobErr = r.recordJobError(ctx, current, jobErr)
+			}
+			discoveryErrors = append(discoveryErrors, jobErr)
 		}
 	}
 	storedJobs, err := r.repository.List(ctx, ports.JobFilter{Namespace: namespace})
 	if err != nil {
-		return err
+		return errors.Join(append(discoveryErrors, err)...)
 	}
 	for _, stored := range storedJobs {
 		if stored.KubernetesUID == "" || stored.Terminal() {
@@ -126,18 +178,25 @@ func (r *Reconciler) discover(ctx context.Context, namespace string) error {
 		if _, exists := seenUIDs[stored.KubernetesUID]; exists {
 			continue
 		}
-		if _, err := r.repository.SetObserved(
-			ctx, stored.ID, domain.StateCancelled, stored.KubernetesUID,
+		if _, err := r.repository.MarkMissing(
+			ctx, stored.ID, stored.KubernetesUID, stored.ResourceVersion, time.Now().UTC(),
 		); err != nil {
-			return err
+			discoveryErrors = append(
+				discoveryErrors,
+				r.recordJobError(ctx, stored, fmt.Errorf("mark Job %s missing: %w", stored.ID, err)),
+			)
 		}
 	}
-	return nil
+	return errors.Join(discoveryErrors...)
 }
 
 func (r *Reconciler) applyCommands(ctx context.Context, jobs []domain.Job) error {
+	var commandErrors []error
 	for _, job := range jobs {
-		if job.KubernetesUID == "" {
+		if job.KubernetesUID == "" || job.ManagementMode != domain.ManagementManaged ||
+			retryPending(job) || job.SyncStatus == domain.SyncStatusMissing ||
+			job.SyncStatus == domain.SyncStatusOutOfScope ||
+			job.SyncStatus == domain.SyncStatusConflicted {
 			continue
 		}
 		name := templateName(job)
@@ -150,39 +209,51 @@ func (r *Reconciler) applyCommands(ctx context.Context, jobs []domain.Job) error
 			// These states require no direct command against an existing Job.
 		case domain.StatePaused:
 			if job.ObservedState != domain.StatePaused && !job.Terminal() {
-				if err := r.kubernetes.Suspend(ctx, job.Namespace, name, true); err != nil {
-					return err
+				if err := r.kubernetes.Suspend(
+					ctx, job.Namespace, name, job.KubernetesUID, job.ResourceVersion, true,
+				); err != nil {
+					commandErrors = append(
+						commandErrors,
+						r.recordJobError(ctx, job, fmt.Errorf("pause Job %s: %w", job.ID, err)),
+					)
 				}
 			}
 		case domain.StateCancelled:
 			if job.ObservedState != domain.StateCancelled {
-				if err := r.kubernetes.DeleteJob(ctx, job.Namespace, name); err != nil &&
+				if err := r.kubernetes.DeleteJob(
+					ctx, job.Namespace, name, job.KubernetesUID, job.ResourceVersion,
+				); err != nil &&
 					!kube.IsNotFound(err) {
-					return err
+					commandErrors = append(
+						commandErrors,
+						r.recordJobError(ctx, job, fmt.Errorf("terminate Job %s: %w", job.ID, err)),
+					)
+					continue
 				}
-				if _, err := r.repository.SetObserved(ctx, job.ID, domain.StateCancelled, job.KubernetesUID); err != nil {
-					return err
+				if _, err := r.repository.SetObserved(ctx, job.ID, domain.Observation{
+					State: domain.StateCancelled, KubernetesUID: job.KubernetesUID,
+					ResourceVersion:         job.ResourceVersion,
+					ExpectedResourceVersion: job.ResourceVersion,
+					Reason:                  "Terminated", Message: "Kubernetes Job was deleted",
+					ObservedAt: time.Now().UTC(), ManagementMode: domain.ManagementManaged,
+					SyncStatus: domain.SyncStatusSynced,
+				}); err != nil {
+					commandErrors = append(
+						commandErrors,
+						r.recordJobError(ctx, job, fmt.Errorf("record Job %s termination: %w", job.ID, err)),
+					)
 				}
 			}
 		}
 	}
-	return nil
+	return errors.Join(commandErrors...)
 }
 
 func (r *Reconciler) schedule(ctx context.Context, jobs []domain.Job) error {
-	acquired, err := r.repository.AcquireSchedulerLease(
-		ctx, r.leaseHolder, 3*r.reconcileInterval,
-	)
-	if err != nil {
-		return fmt.Errorf("acquire scheduler lease: %w", err)
-	}
-	if !acquired {
-		return nil
-	}
 	globalRunning := 0
 	byNamespace := make(map[string]int)
 	for _, job := range jobs {
-		if job.ObservedState == domain.StateRunning {
+		if job.ObservedState == domain.StateRunning && countsTowardConcurrency(job) {
 			globalRunning++
 			byNamespace[job.Namespace]++
 		}
@@ -197,35 +268,51 @@ func (r *Reconciler) schedule(ctx context.Context, jobs []domain.Job) error {
 	if err != nil {
 		return err
 	}
+	var admissionErrors []error
 	for index, job := range eligible {
 		if globalRunning >= r.globalLimit {
 			for _, unprocessed := range eligible[index:] {
 				if err := r.repository.ReleaseSchedulerClaim(
 					ctx, unprocessed.ID, r.leaseHolder,
 				); err != nil {
-					return err
+					admissionErrors = append(
+						admissionErrors,
+						fmt.Errorf("release scheduler claim for Job %s: %w", unprocessed.ID, err),
+					)
 				}
 			}
-			return nil
+			break
 		}
 		if byNamespace[job.Namespace] >= r.namespaceLimit {
 			if err := r.repository.ReleaseSchedulerClaim(ctx, job.ID, r.leaseHolder); err != nil {
-				return err
+				admissionErrors = append(
+					admissionErrors,
+					fmt.Errorf("release scheduler claim for Job %s: %w", job.ID, err),
+				)
 			}
 			continue
 		}
 		admitErr := r.admit(ctx, job)
 		releaseErr := r.repository.ReleaseSchedulerClaim(ctx, job.ID, r.leaseHolder)
 		if admitErr != nil {
-			return admitErr
+			admissionErrors = append(
+				admissionErrors,
+				r.recordJobError(ctx, job, fmt.Errorf("admit Job %s: %w", job.ID, admitErr)),
+			)
 		}
 		if releaseErr != nil {
-			return releaseErr
+			admissionErrors = append(
+				admissionErrors,
+				fmt.Errorf("release scheduler claim for Job %s: %w", job.ID, releaseErr),
+			)
+		}
+		if admitErr != nil {
+			continue
 		}
 		globalRunning++
 		byNamespace[job.Namespace]++
 	}
-	return nil
+	return errors.Join(admissionErrors...)
 }
 
 func (r *Reconciler) admit(ctx context.Context, job domain.Job) error {
@@ -234,28 +321,71 @@ func (r *Reconciler) admit(ctx context.Context, job domain.Job) error {
 		if err != nil {
 			return err
 		}
-		if _, err := r.repository.SetObserved(
-			ctx, job.ID, domain.StatePaused, string(created.UID),
+		if _, err := r.repository.SetObserved(ctx, job.ID, domain.Observation{
+			State: domain.StatePaused, KubernetesUID: string(created.UID),
+			ResourceVersion:         created.ResourceVersion,
+			ExpectedResourceVersion: job.ResourceVersion,
+			Reason:                  "CreatedSuspended", Message: "Job was created suspended before admission",
+			ObservedAt: time.Now().UTC(), ManagementMode: domain.ManagementManaged,
+			SyncStatus: domain.SyncStatusPending,
+		}); err != nil {
+			return err
+		}
+		if err := r.kubernetes.Suspend(
+			ctx, job.Namespace, created.Name, string(created.UID), created.ResourceVersion, false,
 		); err != nil {
 			return err
 		}
-		if err := r.kubernetes.Suspend(ctx, job.Namespace, created.Name, false); err != nil {
-			return err
-		}
-		_, err = r.repository.SetObserved(
-			ctx, job.ID, domain.StateRunning, string(created.UID),
-		)
-		return err
+		return nil
 	}
 	name := templateName(job)
 	if name == "" {
 		name = job.Name
 	}
-	if err := r.kubernetes.Suspend(ctx, job.Namespace, name, false); err != nil {
+	if err := r.kubernetes.Suspend(
+		ctx, job.Namespace, name, job.KubernetesUID, job.ResourceVersion, false,
+	); err != nil {
 		return err
 	}
-	_, err := r.repository.SetObserved(ctx, job.ID, domain.StateRunning, job.KubernetesUID)
-	return err
+	return nil
+}
+
+func (r *Reconciler) recordJobError(ctx context.Context, job domain.Job, reconcileErr error) error {
+	if job.ID == "" {
+		return reconcileErr
+	}
+	exponent := job.ReconcileRetries
+	if exponent > 5 {
+		exponent = 5
+	}
+	delay := 2 * time.Second * time.Duration(1<<exponent)
+	if delay > time.Minute {
+		delay = time.Minute
+	}
+	if err := r.repository.RecordReconcileError(
+		ctx, job.ID, job.ResourceVersion, reconcileErr.Error(), time.Now().UTC().Add(delay),
+	); err != nil {
+		return errors.Join(reconcileErr, fmt.Errorf("record reconciliation error: %w", err))
+	}
+	return reconcileErr
+}
+
+func retryPending(job domain.Job) bool {
+	return job.NextReconcileAt != nil && job.NextReconcileAt.After(time.Now().UTC())
+}
+
+func countsTowardConcurrency(job domain.Job) bool {
+	if job.ManagementMode != domain.ManagementManaged {
+		return false
+	}
+	switch job.SyncStatus {
+	case domain.SyncStatusMissing, domain.SyncStatusStale, domain.SyncStatusOutOfScope,
+		domain.SyncStatusConflicted:
+		return false
+	case domain.SyncStatusSynced, domain.SyncStatusPending, domain.SyncStatusError:
+		return true
+	}
+	return false
 }
 
 func templateName(job domain.Job) string {

@@ -111,6 +111,20 @@ Kubernetes terminates active Pods and resumes with new Pods when suspension is r
 deletes the Kubernetes Job while KubeQueue retains its history. Retry always creates a new attempt
 from the stored template.
 
+## Phase 2 reconciliation foundation
+
+Discovery no longer implies lifecycle ownership. API-created Jobs carry an explicit management
+marker and remain `MANAGED`; unmarked external Jobs are `OBSERVED` and cannot receive lifecycle or
+queue mutations. Ignored workloads, Helm hooks, and KubeQueue internal Jobs are excluded before
+adoption. Claimed durable identities are validated against namespace, name, and UID instead of
+being rebound silently.
+
+Durable synchronization state is separate from lifecycle state. Missing Kubernetes objects retain
+their last observed lifecycle and become `MISSING`; stale, conflicted, archived, and out-of-scope
+records do not consume scheduling concurrency. Kubernetes resource versions are stored as opaque
+compare-and-set tokens. These synchronization diagnostics remain internal until the Phase 2 status
+API is introduced.
+
 ## Phase 1 trust boundary
 
 The API is intended for cluster-internal or otherwise trusted networks and supports a single

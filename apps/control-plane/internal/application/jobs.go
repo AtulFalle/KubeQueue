@@ -2,8 +2,10 @@ package application
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/AtulFalle/KubeQueue/apps/control-plane/internal/domain"
 	"github.com/AtulFalle/KubeQueue/apps/control-plane/internal/ports"
@@ -26,20 +28,30 @@ func (j *Jobs) List(ctx context.Context, filter ports.JobFilter) ([]domain.Job, 
 }
 
 func (j *Jobs) Get(ctx context.Context, id string) (domain.Job, error) {
-	return j.repository.Get(ctx, id)
+	job, err := j.repository.Get(ctx, id)
+	if err != nil {
+		return domain.Job{}, err
+	}
+	if job.ArchivedAt != nil {
+		return domain.Job{}, ports.ErrNotFound
+	}
+	return job, nil
 }
 
 func (j *Jobs) Events(ctx context.Context, id string) ([]domain.Event, error) {
-	if _, err := j.repository.Get(ctx, id); err != nil {
+	if _, err := j.Get(ctx, id); err != nil {
 		return nil, err
 	}
 	return j.repository.Events(ctx, id)
 }
 
 func (j *Jobs) Command(ctx context.Context, id, command string) (domain.Job, error) {
-	current, err := j.repository.Get(ctx, id)
+	current, err := j.Get(ctx, id)
 	if err != nil {
 		return domain.Job{}, err
+	}
+	if current.ManagementMode != domain.ManagementManaged {
+		return domain.Job{}, domain.ErrUnmanagedJob
 	}
 	switch strings.ToLower(command) {
 	case "start", "resume":
@@ -80,6 +92,24 @@ func (j *Jobs) Command(ctx context.Context, id, command string) (domain.Job, err
 	default:
 		return domain.Job{}, fmt.Errorf("unknown command %q", command)
 	}
+}
+
+func (j *Jobs) Archive(ctx context.Context, id string) error {
+	current, err := j.repository.Get(ctx, id)
+	if err != nil {
+		return err
+	}
+	if current.ArchivedAt != nil {
+		return nil
+	}
+	switch current.SyncStatus {
+	case domain.SyncStatusMissing, domain.SyncStatusStale, domain.SyncStatusOutOfScope,
+		domain.SyncStatusConflicted:
+		return j.repository.Archive(ctx, id, time.Now().UTC())
+	case domain.SyncStatusSynced, domain.SyncStatusPending, domain.SyncStatusError:
+		return domain.ErrNotArchivable
+	}
+	return errors.New("job has an unknown synchronization status")
 }
 
 func terminalCommandError(command string) error {

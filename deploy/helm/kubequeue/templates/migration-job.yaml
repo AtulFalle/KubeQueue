@@ -6,6 +6,7 @@ metadata:
     {{- include "kubequeue.labels" . | nindent 4 }}
     app.kubernetes.io/component: migration
   annotations:
+    kubequeue.io/ignore: "true"
     helm.sh/hook: pre-install,pre-upgrade
     helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
     helm.sh/hook-weight: "-5"

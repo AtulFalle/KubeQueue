@@ -27,7 +27,10 @@ type Repository interface {
 	List(context.Context, JobFilter) ([]domain.Job, error)
 	Get(context.Context, string) (domain.Job, error)
 	SetDesiredState(context.Context, string, domain.State) (domain.Job, error)
-	SetObserved(context.Context, string, domain.State, string) (domain.Job, error)
+	SetObserved(context.Context, string, domain.Observation) (domain.Job, error)
+	MarkMissing(context.Context, string, string, string, time.Time) (domain.Job, error)
+	RecordReconcileError(context.Context, string, string, string, time.Time) error
+	Archive(context.Context, string, time.Time) error
 	UpdateQueue(context.Context, string, int, int64, int64, *time.Time) (domain.Job, error)
 	Reorder(context.Context, []string, int64) (int64, error)
 	QueueVersion(context.Context) (int64, error)

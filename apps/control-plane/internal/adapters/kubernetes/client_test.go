@@ -31,8 +31,73 @@ func TestCreateJobLabelsAndSuspendsBeforeAdmission(t *testing.T) {
 	if created.Labels[jobIDLabel] != "job-id" {
 		t.Errorf("management label = %q", created.Labels[jobIDLabel])
 	}
+	if created.Labels[managedLabel] != "true" {
+		t.Errorf("managed label = %q", created.Labels[managedLabel])
+	}
 	if created.Spec.Suspend == nil || !*created.Spec.Suspend {
 		t.Error("created Job must remain suspended until durable admission is recorded")
+	}
+}
+
+func TestSuspendRejectsReplacementJob(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	suspended := false
+	clientset := fake.NewClientset(&batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "job", Namespace: "default", UID: "replacement-uid", ResourceVersion: "2",
+		},
+		Spec: batchv1.JobSpec{Suspend: &suspended},
+	})
+	client := New(clientset)
+	err := client.Suspend(ctx, "default", "job", "original-uid", "1", true)
+	if err == nil {
+		t.Fatal("Suspend() error = nil, want identity conflict")
+	}
+	stored, err := clientset.BatchV1().Jobs("default").Get(ctx, "job", metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Spec.Suspend == nil || *stored.Spec.Suspend {
+		t.Fatal("replacement Job was suspended")
+	}
+}
+
+func TestIgnoredWorkloadClassification(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		job  batchv1.Job
+	}{
+		{
+			name: "explicit opt out",
+			job: batchv1.Job{ObjectMeta: metav1.ObjectMeta{
+				Annotations: map[string]string{ignoreAnnotation: "true"},
+			}},
+		},
+		{
+			name: "Helm hook",
+			job: batchv1.Job{ObjectMeta: metav1.ObjectMeta{
+				Annotations: map[string]string{helmHook: "pre-upgrade"},
+			}},
+		},
+		{
+			name: "internal workload",
+			job: batchv1.Job{ObjectMeta: metav1.ObjectMeta{
+				Labels: map[string]string{internalLabel: "true"},
+			}},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			if !IsIgnored(test.job) {
+				t.Fatal("IsIgnored() = false")
+			}
+			if mode := ManagementModeOf(test.job); mode != domain.ManagementIgnored {
+				t.Fatalf("ManagementModeOf() = %s", mode)
+			}
+		})
 	}
 }
 
