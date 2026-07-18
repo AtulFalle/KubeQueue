@@ -1,0 +1,18 @@
+FROM node:24.18.0-alpine
+
+WORKDIR /workspace
+
+RUN corepack enable
+
+COPY package.json pnpm-workspace.yaml ./
+COPY apps/web/package.json apps/web/package.json
+COPY packages/api-client/package.json packages/api-client/package.json
+RUN pnpm install --no-frozen-lockfile
+
+COPY nx.json tsconfig.base.json eslint.config.mjs ./
+COPY apps/web apps/web
+COPY packages/api-client packages/api-client
+
+EXPOSE 3000
+
+CMD ["pnpm", "--filter", "@kubequeue/web", "dev", "--hostname", "0.0.0.0"]

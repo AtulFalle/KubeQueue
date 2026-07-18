@@ -1,0 +1,34 @@
+{
+  "name": "kubequeue",
+  "version": "0.0.0",
+  "private": true,
+  "packageManager": "pnpm@11.14.0",
+  "engines": {
+    "node": ">=24.18.0 <25",
+    "pnpm": ">=11.14.0 <12"
+  },
+  "scripts": {
+    "build": "nx run-many -t build",
+    "check": "nx run-many -t lint,typecheck,test,build",
+    "dev": "nx run deploy:dev-stack",
+    "dev:down": "nx run deploy:dev-down",
+    "dev:logs": "nx run deploy:dev-logs",
+    "dev:web": "nx run web:dev",
+    "format": "nx format:write",
+    "format:check": "nx format:check",
+    "go:tidy": "nx run control-plane:tidy",
+    "graph": "nx graph",
+    "lint": "nx run-many -t lint",
+    "test": "nx run-many -t test",
+    "typecheck": "nx run-many -t typecheck"
+  },
+  "devDependencies": {
+    "@nx/eslint-plugin": "23.0.1",
+    "@redocly/cli": "2.39.0",
+    "eslint": "9.39.5",
+    "eslint-config-next": "16.2.10",
+    "nx": "23.0.1",
+    "prettier": "3.9.5",
+    "typescript": "5.9.3"
+  }
+}

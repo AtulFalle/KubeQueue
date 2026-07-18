@@ -1,0 +1,69 @@
+{
+  "name": "control-plane",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "projectType": "application",
+  "sourceRoot": "apps/control-plane",
+  "implicitDependencies": ["api-contract"],
+  "tags": ["type:app", "scope:backend"],
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "outputs": ["{workspaceRoot}/dist/apps/control-plane"],
+      "options": {
+        "commands": [
+          "node -e \"require('node:fs').mkdirSync('../../dist/apps/control-plane', { recursive: true })\"",
+          "go build -o ../../dist/apps/control-plane/api ./cmd/api",
+          "go build -o ../../dist/apps/control-plane/worker ./cmd/worker"
+        ],
+        "cwd": "apps/control-plane",
+        "parallel": false
+      }
+    },
+    "lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "commands": [
+          "docker compose run --rm --no-deps go-lint go vet ./...",
+          "docker compose run --rm --no-deps go-lint golangci-lint run"
+        ],
+        "parallel": false
+      }
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "go test -run=^$ ./...",
+        "cwd": "apps/control-plane"
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "outputs": ["{projectRoot}/coverage.out"],
+      "options": {
+        "command": "go test -race -coverprofile=coverage.out ./...",
+        "cwd": "apps/control-plane"
+      }
+    },
+    "tidy": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "docker compose run --rm --build --no-deps --volume ./apps/control-plane:/workspace/apps/control-plane api go mod tidy"
+      }
+    },
+    "serve-api": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "go run ./cmd/api",
+        "cwd": "apps/control-plane"
+      }
+    },
+    "serve-worker": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "go run ./cmd/worker",
+        "cwd": "apps/control-plane"
+      }
+    }
+  }
+}

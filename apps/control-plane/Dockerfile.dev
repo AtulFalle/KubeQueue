@@ -1,0 +1,17 @@
+FROM golang:1.26.5-alpine
+
+RUN apk add --no-cache ca-certificates git \
+  && go install github.com/air-verse/air@v1.65.3
+
+WORKDIR /workspace/apps/control-plane
+
+COPY apps/control-plane/go.mod apps/control-plane/go.sum* ./
+RUN go mod download
+
+COPY apps/control-plane ./
+
+ENV KUBEQUEUE_PROCESS=api
+
+EXPOSE 8080
+
+CMD ["air", "-c", ".air.toml"]

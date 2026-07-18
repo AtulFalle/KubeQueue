@@ -1,0 +1,190 @@
+name: kubequeue-dev
+
+services:
+  postgres:
+    image: postgres:18.4-alpine
+    environment:
+      POSTGRES_DB: kubequeue
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-kubequeue}
+      POSTGRES_USER: kubequeue
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U kubequeue -d kubequeue']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    ports:
+      - '5432:5432'
+    volumes:
+      - kubequeue-postgres:/var/lib/postgresql
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/control-plane/Dockerfile.dev
+    environment:
+      KUBEQUEUE_API_PORT: '8080'
+      KUBEQUEUE_CORS_ALLOWED_ORIGINS: http://localhost:8081
+      KUBEQUEUE_DATABASE_URL: 'postgres://kubequeue:${POSTGRES_PASSWORD:-kubequeue}@postgres:5432/kubequeue?sslmode=disable'
+      KUBEQUEUE_LOG_LEVEL: debug
+      KUBEQUEUE_PROCESS: api
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://localhost:8080/healthz']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 20s
+    init: true
+    ports:
+      - '8080:8080'
+    develop:
+      watch:
+        - action: sync
+          path: ./apps/control-plane
+          target: /workspace/apps/control-plane
+          ignore:
+            - .air/
+            - .air.toml
+            - Dockerfile
+            - Dockerfile.dev
+            - go.mod
+        - action: sync+restart
+          path: ./apps/control-plane/.air.toml
+          target: /workspace/apps/control-plane/.air.toml
+        - action: rebuild
+          path: ./apps/control-plane/go.mod
+        - action: rebuild
+          path: ./apps/control-plane/Dockerfile.dev
+
+  worker:
+    build:
+      context: .
+      dockerfile: apps/control-plane/Dockerfile.dev
+    environment:
+      KUBEQUEUE_DATABASE_URL: 'postgres://kubequeue:${POSTGRES_PASSWORD:-kubequeue}@postgres:5432/kubequeue?sslmode=disable'
+      KUBEQUEUE_LOG_LEVEL: debug
+      KUBEQUEUE_PROCESS: worker
+    depends_on:
+      postgres:
+        condition: service_healthy
+    init: true
+    develop:
+      watch:
+        - action: sync
+          path: ./apps/control-plane
+          target: /workspace/apps/control-plane
+          ignore:
+            - .air/
+            - .air.toml
+            - Dockerfile
+            - Dockerfile.dev
+            - go.mod
+        - action: sync+restart
+          path: ./apps/control-plane/.air.toml
+          target: /workspace/apps/control-plane/.air.toml
+        - action: rebuild
+          path: ./apps/control-plane/go.mod
+        - action: rebuild
+          path: ./apps/control-plane/Dockerfile.dev
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile.dev
+    environment:
+      KUBEQUEUE_API_INTERNAL_URL: http://api:8080
+      NEXT_TELEMETRY_DISABLED: '1'
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://localhost:3000').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 20s
+    init: true
+    ports:
+      - '3000:3000'
+    develop:
+      watch:
+        - action: sync
+          path: ./apps/web
+          target: /workspace/apps/web
+          ignore:
+            - .next/
+            - Dockerfile
+            - Dockerfile.dev
+            - node_modules/
+            - package.json
+        - action: sync
+          path: ./packages/api-client
+          target: /workspace/packages/api-client
+          ignore:
+            - dist/
+            - node_modules/
+            - package.json
+        - action: rebuild
+          path: ./apps/web/package.json
+        - action: rebuild
+          path: ./packages/api-client/package.json
+        - action: rebuild
+          path: ./apps/web/Dockerfile.dev
+        - action: rebuild
+          path: ./package.json
+        - action: rebuild
+          path: ./pnpm-workspace.yaml
+        - action: rebuild
+          path: ./tsconfig.base.json
+
+  api-docs:
+    image: swaggerapi/swagger-ui:v5.32.8
+    environment:
+      DISPLAY_OPERATION_ID: 'true'
+      DOC_EXPANSION: list
+      FILTER: 'true'
+      SWAGGER_JSON: /openapi/openapi.yaml
+      TRY_IT_OUT_ENABLED: 'true'
+    ports:
+      - '8081:8080'
+    volumes:
+      - ./packages/api-contract/openapi:/openapi:ro
+
+  db-admin:
+    image: adminer:5.4.2-standalone
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - '8082:8080'
+
+  go-lint:
+    image: golangci/golangci-lint:v2.12.2-alpine
+    profiles: [tools]
+    working_dir: /workspace
+    entrypoint: []
+    command: ['golangci-lint', 'run']
+    volumes:
+      - ./apps/control-plane:/workspace
+
+  helm:
+    image: alpine/helm:4.2.3
+    profiles: [tools]
+    working_dir: /workspace
+    entrypoint: []
+    volumes:
+      - ./deploy:/workspace/deploy:ro
+
+volumes:
+  kubequeue-postgres:

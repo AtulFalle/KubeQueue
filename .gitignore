@@ -1,0 +1,32 @@
+# Dependencies and build output
+node_modules/
+.next/
+dist/
+coverage/
+.nx/
+
+# Go
+bin/
+.air/
+*.test
+coverage.out
+
+# Local configuration
+.env
+.env.*
+!.env.example
+*.local
+*.db
+*.db-shm
+*.db-wal
+
+# Tooling
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.DS_Store
+Thumbs.db
+
+# Kubernetes development
+.tiltbuild/
