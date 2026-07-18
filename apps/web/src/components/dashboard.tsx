@@ -262,7 +262,7 @@ export function Dashboard({
               <div className="job-meta">
                 <span>P{job.priority}</span>
                 <span>
-                  {job.scheduledFor ? new Date(job.scheduledFor).toLocaleString() : 'Ready now'}
+                  {job.scheduledFor ? formatTimestamp(job.scheduledFor) : 'Ready now'}
                 </span>
               </div>
               {job.desiredState === 'QUEUED' || job.desiredState === 'PAUSED' ? (
@@ -340,7 +340,7 @@ function QueueEditor({
   onError: (message: string) => void;
 }) {
   const [priority, setPriority] = useState(String(job.priority));
-  const [scheduledFor, setScheduledFor] = useState(toLocalDateTime(job.scheduledFor));
+  const [scheduledFor, setScheduledFor] = useState(toDateTimeInput(job.scheduledFor));
   const [saving, setSaving] = useState(false);
 
   async function save() {
@@ -350,7 +350,7 @@ function QueueEditor({
         priority: Number(priority),
         position: job.position,
         version: job.version,
-        scheduledFor: scheduledFor ? new Date(scheduledFor).toISOString() : null,
+        scheduledFor: scheduledFor ? new Date(`${scheduledFor}:00Z`).toISOString() : null,
       });
       await onSaved();
     } catch (reason) {
@@ -374,9 +374,9 @@ function QueueEditor({
         />
       </label>
       <label>
-        <span className="sr-only">Do not start before</span>
+        <span className="sr-only">Do not start before, UTC</span>
         <input
-          aria-label={`Do not start ${job.name} before`}
+          aria-label={`Do not start ${job.name} before, UTC`}
           type="datetime-local"
           value={scheduledFor}
           onChange={(event) => setScheduledFor(event.target.value)}
@@ -389,11 +389,17 @@ function QueueEditor({
   );
 }
 
-function toLocalDateTime(value?: string) {
+function toDateTimeInput(value?: string) {
   if (!value) return '';
-  const date = new Date(value);
-  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
-  return local.toISOString().slice(0, 16);
+  return new Date(value).toISOString().slice(0, 16);
+}
+
+function formatTimestamp(value: string) {
+  return `${new Intl.DateTimeFormat('en-US', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    timeZone: 'UTC',
+  }).format(new Date(value))} UTC`;
 }
 
 function Metric({ label, value, tone }: { label: string; value: number; tone: string }) {

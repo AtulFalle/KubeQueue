@@ -31,6 +31,8 @@ spec:
             - name: http
               containerPort: 3000
           env:
+            - name: HOSTNAME
+              value: 0.0.0.0
             - name: KUBEQUEUE_API_INTERNAL_URL
               value: http://{{ include "kubequeue.fullname" . }}-api:8080
             - name: KUBEQUEUE_ADMIN_TOKEN

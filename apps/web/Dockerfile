@@ -23,4 +23,4 @@ COPY --from=build --chown=nextjs:nodejs /workspace/apps/web/.next/static ./apps/
 USER 1001:1001
 EXPOSE 3000
 ENV PORT=3000
-CMD ["node", "apps/web/server.js"]
+CMD ["sh", "-c", "HOSTNAME=0.0.0.0 exec node apps/web/server.js"]

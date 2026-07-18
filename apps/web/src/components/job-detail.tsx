@@ -140,7 +140,7 @@ export function JobDetail({
             <div>
               <dt>Scheduled</dt>
               <dd>
-                {job.scheduledFor ? new Date(job.scheduledFor).toLocaleString() : 'Immediately'}
+                {job.scheduledFor ? formatTimestamp(job.scheduledFor) : 'Immediately'}
               </dd>
             </div>
             <div>
@@ -160,7 +160,7 @@ export function JobDetail({
                   <strong>{event.message}</strong>
                   <span>{event.type}</span>
                 </div>
-                <time dateTime={event.createdAt}>{new Date(event.createdAt).toLocaleString()}</time>
+                <time dateTime={event.createdAt}>{formatTimestamp(event.createdAt)}</time>
               </li>
             ))}
           </ol>
@@ -174,4 +174,12 @@ export function JobDetail({
       </section>
     </main>
   );
+}
+
+function formatTimestamp(value: string) {
+  return `${new Intl.DateTimeFormat('en-US', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    timeZone: 'UTC',
+  }).format(new Date(value))} UTC`;
 }
