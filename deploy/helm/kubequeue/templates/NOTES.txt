@@ -1,0 +1,9 @@
+KubeQueue {{ .Chart.AppVersion }} has been installed as an experimental developer preview.
+
+The dashboard is an administrative surface. Keep it cluster-private and access it with:
+
+  kubectl -n {{ .Release.Namespace }} port-forward service/{{ include "kubequeue.fullname" . }}-web 3000:3000
+
+Then open http://127.0.0.1:3000.
+
+Do not expose the dashboard publicly without an external authentication layer.

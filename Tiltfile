@@ -16,7 +16,10 @@ k8s_yaml('deploy/kind/postgres.yaml')
 k8s_yaml(helm(
     'deploy/helm/kubequeue',
     name='kubequeue',
-    set=['database.url=postgres://kubequeue:kubequeue@postgres:5432/kubequeue?sslmode=disable'],
+    set=[
+        'database.url=postgres://kubequeue:kubequeue@postgres:5432/kubequeue?sslmode=disable',
+        'config.adminToken=tilt-development-token',
+    ],
 ))
 
 k8s_resource('postgres')

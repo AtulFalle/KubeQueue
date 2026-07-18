@@ -4,6 +4,53 @@ KubeQueue is a lightweight control plane for standard Kubernetes batch Jobs. It 
 priority, delayed execution, lifecycle control, history, and a focused dashboard without replacing
 Kubernetes or requiring a custom resource.
 
+> [!WARNING]
+> KubeQueue v0.1 is an experimental developer preview. It does not provide production support,
+> upgrade compatibility, or multi-user authorization. The dashboard is an administrative surface:
+> keep it cluster-private and access it through authenticated Kubernetes port-forwarding.
+
+## Install the v0.1.0 preview
+
+Prerequisites:
+
+- Kubernetes 1.31 or later
+- Helm 3.14 or later with OCI support
+- A PostgreSQL database reachable from the cluster
+- Permission to create namespace-scoped Roles, Deployments, Services, Secrets, and Jobs
+
+Create the namespace and secrets without placing credentials in Helm release values:
+
+```bash
+kubectl create namespace kubequeue
+kubectl -n kubequeue create secret generic kubequeue-database \
+  --from-literal=database-url='postgres://USER:PASSWORD@HOST:5432/kubequeue?sslmode=require'
+kubectl -n kubequeue create secret generic kubequeue-admin \
+  --from-literal=admin-token="$(openssl rand -hex 32)"
+```
+
+Install the OCI chart:
+
+```bash
+helm install kubequeue oci://ghcr.io/atulfalle/charts/kubequeue \
+  --version 0.1.0 \
+  --namespace kubequeue \
+  --set-string database.existingSecret=kubequeue-database \
+  --set-string config.adminTokenExistingSecret=kubequeue-admin
+```
+
+Access the cluster-private dashboard:
+
+```bash
+kubectl -n kubequeue port-forward service/kubequeue-kubequeue-web 3000:3000
+```
+
+Open <http://127.0.0.1:3000>. Do not expose this preview dashboard through a public Service or
+Ingress: every dashboard user receives administrative API access.
+
+Uninstall with `helm uninstall kubequeue --namespace kubequeue`. The external PostgreSQL database
+and manually created Secrets are retained. Review the chart-specific guidance in
+[`deploy/helm/kubequeue/README.md`](deploy/helm/kubequeue/README.md) before installing or upgrading.
+
 ## Repository layout
 
 ```text
@@ -113,6 +160,17 @@ admission across worker replicas.
 ## Continuous integration
 
 Pull requests and pushes to `master` run the GitHub Actions quality gate in
-`.github/workflows/ci.yml`. It validates Go formatting, generated-client drift, Docker Compose,
-OpenAPI, and Helm; runs Go, PostgreSQL, React accessibility, and TypeScript checks; builds every Nx
-project with a build target; and exercises scheduling, adoption, and lifecycle flows on kind.
+`.github/workflows/ci.yml`. It uses Nx to format, lint, test, and build affected projects. Deployment
+configuration is linted only when `deploy/**` or `compose.yaml` changes. Tag-driven release checks
+validate the complete tree, PostgreSQL integration tests, production images, and the packaged Helm
+chart before publishing.
+
+## Release status and support
+
+Release notes are maintained in [`CHANGELOG.md`](CHANGELOG.md). v0.1.x is a developer preview and
+does not carry a production support or backward-compatibility guarantee. Report security issues
+privately as described in [`SECURITY.md`](SECURITY.md); use GitHub issues for reproducible bugs and
+feature requests. Maintainers publish immutable artifacts using
+[`docs/releasing.md`](docs/releasing.md).
+
+KubeQueue is licensed under the [Apache License 2.0](LICENSE).

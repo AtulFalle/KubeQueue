@@ -3,5 +3,14 @@ name: kubequeue
 description: Lightweight control plane for Kubernetes batch jobs
 type: application
 version: 0.1.0
-appVersion: '0.0.0'
+appVersion: '0.1.0'
 kubeVersion: '>=1.31.0-0'
+home: https://github.com/AtulFalle/KubeQueue
+sources:
+  - https://github.com/AtulFalle/KubeQueue
+maintainers:
+  - name: Atul Falle
+    url: https://github.com/AtulFalle
+annotations:
+  artifacthub.io/license: Apache-2.0
+  artifacthub.io/prerelease: 'true'
