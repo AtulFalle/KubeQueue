@@ -1,0 +1,99 @@
+name: Tag Merged KubeQueue Release
+
+on:
+  pull_request:
+    types:
+      - closed
+
+permissions:
+  actions: write
+  contents: write
+
+concurrency:
+  group: tag-release-${{ github.event.pull_request.head.ref }}
+  cancel-in-progress: false
+
+env:
+  CI: 'true'
+  NX_DAEMON: 'false'
+
+jobs:
+  tag:
+    name: Create release tag
+    if: >-
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      startsWith(github.event.pull_request.head.ref, 'release/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Resolve release metadata
+        id: release
+        shell: bash
+        env:
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+          RELEASE_BRANCH: ${{ github.event.pull_request.head.ref }}
+          TARGET_BRANCH: ${{ github.event.pull_request.base.ref }}
+        run: |
+          release_tag="${RELEASE_BRANCH#release/}"
+          if [[ ! "${release_tag}" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
+            echo "Release branch does not end in a valid semantic version tag."
+            exit 1
+          fi
+          echo "tag=${release_tag}" >> "${GITHUB_OUTPUT}"
+          echo "version=${release_tag#v}" >> "${GITHUB_OUTPUT}"
+          echo "sha=${MERGE_SHA}" >> "${GITHUB_OUTPUT}"
+          echo "target_branch=${TARGET_BRANCH}" >> "${GITHUB_OUTPUT}"
+
+      - name: Check out merged release commit
+        uses: actions/checkout@v7.0.0
+        with:
+          fetch-depth: 0
+          ref: ${{ steps.release.outputs.sha }}
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6.0.9
+        with:
+          version: 11.14.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 24.18.0
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate merged release versions
+        env:
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: pnpm nx run deploy:release-version-check -- "${RELEASE_VERSION}"
+
+      - name: Create immutable release tag
+        shell: bash
+        env:
+          RELEASE_SHA: ${{ steps.release.outputs.sha }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          if git ls-remote --exit-code --tags origin "refs/tags/${RELEASE_TAG}" >/dev/null 2>&1; then
+            echo "${RELEASE_TAG} already exists and cannot be reused."
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "${RELEASE_TAG}" "${RELEASE_SHA}" -m "KubeQueue ${RELEASE_TAG}"
+          git push origin "refs/tags/${RELEASE_TAG}"
+
+      - name: Dispatch artifact publication
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          TARGET_BRANCH: ${{ steps.release.outputs.target_branch }}
+        run: >-
+          gh workflow run release.yml
+          --repo "${GITHUB_REPOSITORY}"
+          --ref "${TARGET_BRANCH}"
+          -f release_tag="${RELEASE_TAG}"

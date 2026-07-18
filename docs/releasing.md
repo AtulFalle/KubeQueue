@@ -3,33 +3,40 @@
 KubeQueue releases are built from immutable tags by `.github/workflows/release.yml`. Do not upload
 locally built images or charts to an existing release.
 
-## v0.1.x preflight
+## Prepare a release
 
-1. Confirm the release commit is on `master` and the working tree is clean.
-2. Confirm `package.json`, `apps/web/package.json`, `packages/api-client/package.json`, and both
-   version fields in `deploy/helm/kubequeue/Chart.yaml` match the tag without its `v` prefix.
-3. Update `CHANGELOG.md` and verify the README and chart installation commands use that version.
-4. Run `pnpm format:check` and `pnpm check`.
-5. Run PostgreSQL integration tests against an empty database with
+Run the **Prepare KubeQueue Release** workflow and provide:
+
+- `target_branch`: the branch to release from and receive the release pull request, such as
+  `master` or a maintained hotfix branch.
+- `release_tag`: the unused semantic version tag, including the `v` prefix, such as `v0.1.3`.
+
+The workflow updates package manifests, Helm chart and image versions, installation documentation,
+and changelog links. It then opens `release/<tag>` against the selected target branch and dispatches
+CI for the generated commit. It refuses to reuse an existing tag or release branch.
+
+Review the generated release pull request:
+
+1. Confirm the target branch and version are correct.
+2. Confirm the generated changelog section contains the notable changes collected under
+   `Unreleased`.
+3. Run `pnpm format:check` and `pnpm check`.
+4. Run PostgreSQL integration tests against an empty database with
    `KUBEQUEUE_TEST_POSTGRES_URL` configured and Nx caching disabled.
-6. Validate `.github/workflows/ci.yml` and `.github/workflows/release.yml` with `actionlint`.
-7. Review dependency and container scan results and resolve all critical vulnerabilities.
-8. Merge the release-preparation pull request and wait for green `master` CI.
+5. Validate the changed workflows with `actionlint`.
+6. Review dependency and container scan results and resolve all critical vulnerabilities.
+7. Merge only after required checks pass.
 
 ## Publish
 
-Create an annotated tag from the verified `master` commit and push only that tag:
+Merging a generated release pull request creates an annotated tag at its merge commit and
+dispatches `.github/workflows/release.yml`. The publication workflow validates the complete tagged
+repository, runs PostgreSQL tests, builds and smoke-tests the production images, publishes
+versioned and commit-addressed images with provenance and SBOMs, publishes the OCI chart, and
+creates a prerelease with the chart archive and checksum.
 
-```bash
-git switch master
-git pull --ff-only
-git tag -a v0.1.0 -m "KubeQueue v0.1.0"
-git push origin v0.1.0
-```
-
-The tag workflow validates the complete repository, runs PostgreSQL tests, builds and smoke-tests
-the production images, publishes versioned and commit-addressed images with provenance and SBOMs,
-publishes the OCI chart, and creates a prerelease with the chart archive and checksum.
+Do not create the tag manually before the release pull request merges. Tags are immutable release
+inputs, so version changes made after tagging cannot become part of that release.
 
 ## Verify
 
@@ -43,6 +50,6 @@ publishes the OCI chart, and creates a prerelease with the chart archive and che
    the chart.
 6. Verify the database and manually created Secrets remain after uninstall.
 
-If validation or publication fails, do not reuse the tag after changing source. Delete incomplete
-preview artifacts if necessary, fix the release commit through a pull request, increment the
-version, and publish a new tag.
+If validation or publication fails after the tag is created, do not reuse the tag after changing
+source. Delete incomplete preview artifacts if necessary, fix the selected release branch through
+a pull request, and prepare a new version.

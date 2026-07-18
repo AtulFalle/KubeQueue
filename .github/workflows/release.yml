@@ -4,24 +4,35 @@ on:
   push:
     tags:
       - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing immutable release tag to publish
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ inputs.release_tag || github.ref }}
   cancel-in-progress: false
 
 env:
   CI: 'true'
   NX_CLOUD_ACCESS_TOKEN: ${{ secrets.NX_CLOUD_ACCESS_TOKEN }}
   NX_DAEMON: 'false'
+  RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
 
 jobs:
   validate:
     name: Validate release
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    outputs:
+      release_sha: ${{ steps.release.outputs.sha }}
+      release_tag: ${{ steps.release.outputs.tag }}
+      release_version: ${{ steps.release.outputs.version }}
     services:
       postgres:
         image: postgres:18.4-alpine
@@ -44,13 +55,18 @@ jobs:
         uses: actions/checkout@v7.0.0
         with:
           fetch-depth: 0
+          ref: ${{ env.RELEASE_TAG }}
 
       - name: Validate tag and release versions
+        id: release
         shell: bash
         run: |
-          version="${GITHUB_REF_NAME#v}"
-          git fetch origin master
-          git merge-base --is-ancestor "${GITHUB_SHA}" origin/master
+          if [[ ! "${RELEASE_TAG}" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
+            echo "Release tag must be a semantic version with a v prefix."
+            exit 1
+          fi
+          version="${RELEASE_TAG#v}"
+          release_sha="$(git rev-parse "${RELEASE_TAG}^{commit}")"
           node - "${version}" <<'NODE'
           const fs = require('node:fs');
           const version = process.argv[2];
@@ -70,13 +86,23 @@ jobs:
               chart.match(/^appVersion:\s*'?([^'\s]+)'?/m)?.[1],
             ],
           );
+          const values = fs.readFileSync('deploy/helm/kubequeue/values.yaml', 'utf8');
+          const imageTags = [...values.matchAll(/^    tag:\s*(.+)$/gm)].map((match) => match[1]);
+          if (imageTags.length !== 3) {
+            throw new Error(`deploy/helm/kubequeue/values.yaml has ${imageTags.length} image tags; expected 3`);
+          }
+          imageTags.forEach((tag, index) => {
+            manifests.push([`deploy/helm/kubequeue/values.yaml image tag ${index + 1}`, tag]);
+          });
           for (const [source, actual] of manifests) {
             if (actual !== version) {
               throw new Error(`${source} is ${actual ?? 'missing'}; expected ${version}`);
             }
           }
           NODE
-          echo "RELEASE_VERSION=${version}" >> "${GITHUB_ENV}"
+          echo "tag=${RELEASE_TAG}" >> "${GITHUB_OUTPUT}"
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "sha=${release_sha}" >> "${GITHUB_OUTPUT}"
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v6.0.9
@@ -103,6 +129,9 @@ jobs:
         run: |
           pnpm install --frozen-lockfile
           go -C apps/control-plane mod download
+
+      - name: Check synchronized release metadata
+        run: pnpm nx run deploy:release-version-check -- "${RELEASE_TAG#v}"
 
       - name: Validate formatting and generated client
         shell: bash
@@ -206,6 +235,8 @@ jobs:
     steps:
       - name: Check out release tag
         uses: actions/checkout@v7.0.0
+        with:
+          ref: ${{ needs.validate.outputs.release_tag }}
 
       - name: Log in to GHCR
         uses: docker/login-action@v4.4.0
@@ -223,8 +254,8 @@ jobs:
         with:
           images: ghcr.io/atulfalle/${{ matrix.image }}
           tags: |
-            type=semver,pattern={{version}}
-            type=sha,format=long
+            type=semver,pattern={{version}},value=${{ needs.validate.outputs.release_tag }}
+            type=raw,value=sha-${{ needs.validate.outputs.release_sha }}
           labels: |
             org.opencontainers.image.title=KubeQueue ${{ matrix.name }}
             org.opencontainers.image.description=KubeQueue experimental developer preview
@@ -256,6 +287,8 @@ jobs:
     steps:
       - name: Check out release tag
         uses: actions/checkout@v7.0.0
+        with:
+          ref: ${{ needs.validate.outputs.release_tag }}
 
       - name: Set up Helm
         uses: azure/setup-helm@v5.0.1
@@ -281,23 +314,23 @@ jobs:
         run: |
           mkdir -p dist
           pnpm nx run deploy:helm-package
-          sha256sum "dist/kubequeue-${GITHUB_REF_NAME#v}.tgz" > "dist/kubequeue-${GITHUB_REF_NAME#v}.tgz.sha256"
+          sha256sum "dist/kubequeue-${RELEASE_TAG#v}.tgz" > "dist/kubequeue-${RELEASE_TAG#v}.tgz.sha256"
           echo "${GITHUB_TOKEN}" | helm registry login ghcr.io --username "${GITHUB_ACTOR}" --password-stdin
-          helm push "dist/kubequeue-${GITHUB_REF_NAME#v}.tgz" "oci://ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/charts"
+          helm push "dist/kubequeue-${RELEASE_TAG#v}.tgz" "oci://ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/charts"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create preview release
         shell: bash
         run: |
-          gh release create "${GITHUB_REF_NAME}" \
+          gh release create "${RELEASE_TAG}" \
             dist/kubequeue-*.tgz \
             dist/kubequeue-*.tgz.sha256 \
             --prerelease \
             --generate-notes \
-            --title "KubeQueue ${GITHUB_REF_NAME}" \
-            --notes "$(cat <<'EOF'
-          KubeQueue v0.1.0 is an experimental developer preview.
+            --title "KubeQueue ${RELEASE_TAG}" \
+            --notes "$(cat <<EOF
+          KubeQueue ${RELEASE_TAG} is an experimental developer preview.
 
           Keep the dashboard cluster-private. This release does not provide production support,
           backward-compatible upgrades, or multi-user authorization. See the attached chart and

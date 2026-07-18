@@ -80,6 +80,19 @@
         "command": "helm package deploy/helm/kubequeue --destination dist"
       }
     },
+    "release-version-set": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "node tools/release-version.mjs set"
+      }
+    },
+    "release-version-check": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node tools/release-version.mjs check"
+      }
+    },
     "kind-create": {
       "executor": "nx:run-commands",
       "options": {
