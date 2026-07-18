@@ -1,0 +1,17 @@
+---
+description: KubeQueue architecture boundaries and repository workflow
+alwaysApply: true
+---
+
+# Architecture
+
+- Run build, lint, test, typecheck, and deployment tasks through Nx.
+- Keep the dependency direction: `web -> api-client -> api-contract`.
+- The Go control plane depends on the API contract but never on frontend code.
+- Keep product policy in `internal/domain` and `internal/application`.
+- Keep Gin, SQL, and Kubernetes types inside platform or adapter packages.
+- Keep desired state distinct from Kubernetes-observed state.
+- Prefer a small focused package over a generic `utils`, `common`, or `helpers` package.
+- Do not introduce infrastructure or abstractions before a concrete use case needs them.
+- Update architecture documentation when a boundary or dependency direction changes.
+- Never hand-edit generated API client files.

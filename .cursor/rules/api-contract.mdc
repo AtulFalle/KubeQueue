@@ -1,0 +1,17 @@
+---
+description: OpenAPI contract and generated client conventions
+globs: packages/api-contract/**/*.yaml,packages/api-client/**/*.ts
+alwaysApply: false
+---
+
+# API Contract
+
+- Design or update OpenAPI before implementing an externally visible endpoint.
+- Version public routes under `/api/v1`; make operations resource-oriented and idempotent.
+- Use explicit request and response schemas with stable operation IDs.
+- Represent errors with one documented envelope and machine-readable error codes.
+- Use RFC 3339 UTC timestamps and opaque string identifiers.
+- Define pagination, filtering, ordering, and concurrency tokens in the contract.
+- Do not expose Kubernetes API objects as the product API.
+- Generate client artifacts from the contract; never edit generated files manually.
+- Treat incompatible schema changes as migrations requiring an ADR.

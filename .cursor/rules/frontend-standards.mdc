@@ -1,0 +1,18 @@
+---
+description: Next.js, React, and TypeScript coding standards
+globs: apps/web/**/*.{ts,tsx,css}
+alwaysApply: false
+---
+
+# Frontend Standards
+
+- Keep TypeScript strict; do not use `any`, non-null assertions, or unchecked casts.
+- Default to React Server Components; add `'use client'` only at interactive boundaries.
+- Keep route files thin and move focused UI into feature-local components.
+- Use the generated API client; do not duplicate server DTOs or call undocumented endpoints.
+- Treat URL search parameters as the source of truth for shareable filters and pagination.
+- Prefer semantic HTML and native controls; preserve keyboard and screen-reader operation.
+- Provide explicit loading, empty, error, and stale-data states.
+- Do not use effects for derived state or routine data fetching.
+- Avoid global client state until multiple routes demonstrably need shared mutable state.
+- Keep components focused and tests behavior-oriented.

@@ -1,0 +1,19 @@
+---
+description: Go control-plane coding standards
+globs: apps/control-plane/**/*.go
+alwaysApply: false
+---
+
+# Go Standards
+
+- Accept `context.Context` first for blocking or I/O operations; never store it in structs.
+- Wrap errors with operation context using `%w`; do not log and return the same error.
+- Keep domain behavior deterministic and free of framework, database, and Kubernetes types.
+- Define interfaces at the consuming package and keep them narrow.
+- Prefer explicit constructors and valid zero values; avoid service locators and global state.
+- Bound goroutines with cancellation and ownership; use `errgroup` for coordinated workers.
+- Make reconciliation and command handling idempotent.
+- Validate input at transport boundaries and preserve typed domain errors.
+- Use structured `slog` fields; never log credentials, tokens, manifests, or environment dumps.
+- Add table-driven tests and run race detection for concurrent code.
+- Format with `gofmt`/`goimports` and satisfy `go vet` plus `golangci-lint`.

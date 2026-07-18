@@ -1,0 +1,20 @@
+---
+description: Kubernetes, Helm, container, and local-cluster conventions
+globs: deploy/**/*,**/Dockerfile*,Tiltfile,compose.yaml
+alwaysApply: false
+---
+
+# Kubernetes Delivery
+
+- Keep containers non-root, minimal, immutable, and compatible with read-only filesystems.
+- Set resource requests, memory limits, probes, and graceful termination for each workload.
+- Grant the worker only the Kubernetes verbs and namespaces required by implemented behavior.
+- Keep API and web service accounts from receiving Kubernetes credentials by default.
+- Put configurable deployment behavior in Helm values and validate public values with a schema.
+- Never place credentials or cluster-specific values in tracked files.
+- Keep `docker compose up --build --watch` as the complete local-stack entry point.
+- Give Compose services health checks and use health-based dependency conditions.
+- Keep development-only tools containerized and pin every external image and tool version.
+- Keep kind and Tilt behavior representative of Helm deployment.
+- Pin deployable image tags in release configuration; use `dev` only for local Tilt workflows.
+- Validate charts with `helm lint` and `helm template` through Nx.
