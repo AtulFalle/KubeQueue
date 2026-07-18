@@ -7,6 +7,8 @@ configuration, storage, and APIs without backward compatibility.
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-07-18
+
 ## [0.1.0] - 2026-07-18
 
 First packaged developer preview.
@@ -26,5 +28,6 @@ First packaged developer preview.
 - PostgreSQL backup, restore, upgrade, and rollback compatibility are not yet guaranteed.
 - Multi-user identity, team RBAC, high-availability guidance, and production support are deferred.
 
-[Unreleased]: https://github.com/AtulFalle/KubeQueue/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/AtulFalle/KubeQueue/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/AtulFalle/KubeQueue/releases/tag/v0.1.3
 [0.1.0]: https://github.com/AtulFalle/KubeQueue/releases/tag/v0.1.0
