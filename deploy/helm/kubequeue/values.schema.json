@@ -17,12 +17,21 @@
     "config": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["watchNamespaces", "globalConcurrency", "namespaceConcurrency", "adminToken"],
+      "required": [
+        "watchNamespaces",
+        "globalConcurrency",
+        "namespaceConcurrency",
+        "adminToken",
+        "adminTokenExistingSecret",
+        "adminTokenExistingSecretKey"
+      ],
       "properties": {
         "watchNamespaces": { "type": "string" },
         "globalConcurrency": { "type": "integer", "minimum": 1 },
         "namespaceConcurrency": { "type": "integer", "minimum": 1 },
-        "adminToken": { "type": "string" }
+        "adminToken": { "type": "string" },
+        "adminTokenExistingSecret": { "type": "string" },
+        "adminTokenExistingSecretKey": { "type": "string", "minLength": 1 }
       }
     },
     "database": {

@@ -39,9 +39,8 @@ spec:
             - name: KUBEQUEUE_ADMIN_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "kubequeue.fullname" . }}-config
-                  key: admin-token
-                  optional: true
+                  name: {{ default (printf "%s-config" (include "kubequeue.fullname" .)) .Values.config.adminTokenExistingSecret }}
+                  key: {{ .Values.config.adminTokenExistingSecretKey }}
           readinessProbe:
             httpGet:
               path: /readyz

@@ -10,6 +10,8 @@ config:
   globalConcurrency: 10
   namespaceConcurrency: 5
   adminToken: ''
+  adminTokenExistingSecret: ''
+  adminTokenExistingSecretKey: admin-token
 
 database:
   url: ''
@@ -21,8 +23,8 @@ networkPolicy:
 
 api:
   image:
-    repository: kubequeue-api
-    tag: dev
+    repository: ghcr.io/atulfalle/kubequeue-api
+    tag: 0.1.0
     pullPolicy: IfNotPresent
   replicas: 1
   resources:
@@ -34,8 +36,8 @@ api:
 
 worker:
   image:
-    repository: kubequeue-worker
-    tag: dev
+    repository: ghcr.io/atulfalle/kubequeue-worker
+    tag: 0.1.0
     pullPolicy: IfNotPresent
   replicas: 1
   resources:
@@ -47,8 +49,8 @@ worker:
 
 web:
   image:
-    repository: kubequeue-web
-    tag: dev
+    repository: ghcr.io/atulfalle/kubequeue-web
+    tag: 0.1.0
     pullPolicy: IfNotPresent
   replicas: 1
   resources:
