@@ -60,37 +60,42 @@
         "command": "docker compose run --rm --no-deps helm helm template kubequeue deploy/helm/kubequeue --set-string database.url=postgres://example --set-string config.adminToken=test-token"
       }
     },
+    "workflow-lint": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "inputs": [
+        "{workspaceRoot}/.github/workflows/*.yml",
+        "{workspaceRoot}/tools/check-workflows.mjs"
+      ],
+      "options": {
+        "command": "node tools/check-workflows.mjs"
+      }
+    },
     "release-validate": {
       "executor": "nx:run-commands",
+      "inputs": [
+        "default",
+        "^production",
+        "{workspaceRoot}/compose.yaml",
+        "{workspaceRoot}/tools/release-helm.mjs",
+        { "env": "KUBEQUEUE_RELEASE_VERSION" }
+      ],
       "outputs": ["{workspaceRoot}/dist/release"],
       "options": {
-        "commands": [
-          "node -e \"require('node:fs').mkdirSync('dist/release', { recursive: true })\"",
-          "helm lint deploy/helm/kubequeue --set-string database.url=postgres://example --set-string config.adminToken=release-validation-token",
-          "helm template kubequeue deploy/helm/kubequeue --set-string database.url=postgres://example --set-string config.adminToken=release-validation-token > dist/release/kubequeue-rendered.yaml",
-          "helm package deploy/helm/kubequeue --destination dist/release"
-        ],
-        "parallel": false
+        "command": "node tools/release-helm.mjs validate"
       }
     },
     "helm-package": {
       "executor": "nx:run-commands",
+      "inputs": [
+        "default",
+        "{workspaceRoot}/compose.yaml",
+        "{workspaceRoot}/tools/release-helm.mjs",
+        { "env": "KUBEQUEUE_RELEASE_VERSION" }
+      ],
       "outputs": ["{workspaceRoot}/dist/kubequeue-*.tgz"],
       "options": {
-        "command": "helm package deploy/helm/kubequeue --destination dist"
-      }
-    },
-    "release-version-set": {
-      "executor": "nx:run-commands",
-      "cache": false,
-      "options": {
-        "command": "node tools/release-version.mjs set"
-      }
-    },
-    "release-version-check": {
-      "executor": "nx:run-commands",
-      "options": {
-        "command": "node tools/release-version.mjs check"
+        "command": "node tools/release-helm.mjs package"
       }
     },
     "kind-create": {

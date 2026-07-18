@@ -18,7 +18,10 @@
     ],
     "sharedGlobals": [
       "{workspaceRoot}/nx.json",
-      "{workspaceRoot}/package.json",
+      {
+        "json": "{workspaceRoot}/package.json",
+        "fields": ["packageManager", "engines", "dependencies", "devDependencies"]
+      },
       "{workspaceRoot}/pnpm-lock.yaml",
       "{workspaceRoot}/tsconfig.base.json",
       "{workspaceRoot}/go.work",

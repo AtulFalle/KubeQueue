@@ -188,6 +188,7 @@ services:
     entrypoint: []
     volumes:
       - ./deploy:/workspace/deploy:ro
+      - ./dist:/workspace/dist
 
 volumes:
   kubequeue-postgres:

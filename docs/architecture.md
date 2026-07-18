@@ -68,6 +68,12 @@ when generated output drifts from the contract.
 Helm is the deployment source of truth. kind and Tilt provide a local loop over the same images
 and chart. Nx is the task entry point for local development and CI.
 
+Release tags are the source of truth for published versions. Private workspace package versions do
+not track product releases. The release workflow accepts only an exact `master` commit with a
+successful post-merge CI run, builds commit-addressed images once, validates them, and promotes the
+same manifests to semantic-version tags. Helm chart metadata is injected from that release tag at
+package time.
+
 Docker Compose is the zero-install application loop. It runs PostgreSQL, API, worker, web, Swagger
 UI, and Adminer together. Development Dockerfiles use Air and Next.js hot reload; Compose Watch
 synchronizes source and rebuilds images only when dependency manifests change. The web proxies

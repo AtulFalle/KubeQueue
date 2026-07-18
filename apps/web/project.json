@@ -19,6 +19,16 @@
         "command": "pnpm --filter @kubequeue/web build"
       }
     },
+    "ci-build": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "dependsOn": ["^build"],
+      "inputs": ["production", "^production"],
+      "outputs": ["{projectRoot}/.next"],
+      "options": {
+        "command": "pnpm --filter @kubequeue/web build"
+      }
+    },
     "start": {
       "executor": "nx:run-commands",
       "options": {

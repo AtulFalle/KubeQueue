@@ -1,228 +1,82 @@
-name: Prepare KubeQueue Release
+name: Start KubeQueue Release
 
 on:
   workflow_dispatch:
     inputs:
-      target_branch:
-        description: Branch that will receive the release pull request
-        required: true
-        default: master
-        type: string
       release_tag:
-        description: Semantic release tag, including the v prefix (for example, v0.1.3)
+        description: Unused semantic release tag, including the v prefix (for example, v0.2.0)
         required: true
         type: string
 
 permissions:
   actions: write
-  contents: write
-  pull-requests: write
+  contents: read
 
 concurrency:
   group: prepare-release-${{ inputs.release_tag }}
   cancel-in-progress: false
 
-env:
-  CI: 'true'
-  NX_DAEMON: 'false'
-
 jobs:
-  prepare:
-    name: Open release pull request
+  start:
+    name: Verify master and start publication
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
 
     steps:
-      - name: Validate release inputs
-        shell: bash
-        env:
-          RELEASE_TAG: ${{ inputs.release_tag }}
-          TARGET_BRANCH: ${{ inputs.target_branch }}
-        run: |
-          if [[ ! "${RELEASE_TAG}" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
-            echo "release_tag must be a semantic version with a v prefix, such as v0.1.3."
-            exit 1
-          fi
-          if [[ "${TARGET_BRANCH}" == -* ]] || ! git check-ref-format --branch "${TARGET_BRANCH}"; then
-            echo "target_branch is not a valid Git branch name."
-            exit 1
-          fi
-
-      - name: Check out target branch
+      - name: Check out master
         uses: actions/checkout@v7.0.0
         with:
           fetch-depth: 0
-          ref: ${{ inputs.target_branch }}
+          ref: master
 
-      - name: Ensure tag and release branch are unused
-        id: existing
+      - name: Verify release input and master CI
+        id: release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_BRANCH: release/${{ inputs.release_tag }}
           RELEASE_TAG: ${{ inputs.release_tag }}
-          TARGET_BRANCH: ${{ inputs.target_branch }}
         run: |
+          if [[ ! "${RELEASE_TAG}" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
+            echo "release_tag must be a semantic version with a v prefix, such as v0.2.0."
+            exit 1
+          fi
+
           if git ls-remote --exit-code --tags origin "refs/tags/${RELEASE_TAG}" >/dev/null 2>&1; then
-            echo "${RELEASE_TAG} already exists and cannot be reused."
-            exit 1
-          fi
-          if git ls-remote --exit-code --heads origin "refs/heads/${RELEASE_BRANCH}" >/dev/null 2>&1; then
-            existing_url="$(gh pr list \
-              --repo "${GITHUB_REPOSITORY}" \
-              --head "${RELEASE_BRANCH}" \
-              --base "${TARGET_BRANCH}" \
-              --state open \
-              --json url \
-              --jq '.[0].url // empty')"
-            if [[ -n "${existing_url}" ]]; then
-              echo "Release pull request already exists: ${existing_url}"
-              echo "pr_url=${existing_url}" >> "${GITHUB_OUTPUT}"
-              exit 0
-            fi
-            echo "${RELEASE_BRANCH} already exists without an open pull request."
+            echo "${RELEASE_TAG} already exists and cannot be reused for different source."
             exit 1
           fi
 
-      - name: Set up pnpm
-        if: steps.existing.outputs.pr_url == ''
-        uses: pnpm/action-setup@v6.0.9
-        with:
-          version: 11.14.0
-
-      - name: Set up Node.js
-        if: steps.existing.outputs.pr_url == ''
-        uses: actions/setup-node@v7.0.0
-        with:
-          node-version: 24.18.0
-          cache: pnpm
-
-      - name: Install dependencies
-        if: steps.existing.outputs.pr_url == ''
-        run: pnpm install --frozen-lockfile
-
-      - name: Update release versions
-        if: steps.existing.outputs.pr_url == ''
-        env:
-          RELEASE_VERSION: ${{ inputs.release_tag }}
-        run: pnpm nx run deploy:release-version-set -- "${RELEASE_VERSION#v}"
-
-      - name: Commit release preparation
-        if: steps.existing.outputs.pr_url == ''
-        shell: bash
-        env:
-          RELEASE_BRANCH: release/${{ inputs.release_tag }}
-          RELEASE_TAG: ${{ inputs.release_tag }}
-        run: |
-          git switch -c "${RELEASE_BRANCH}"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add \
-            package.json \
-            apps/web/package.json \
-            packages/api-client/package.json \
-            deploy/helm/kubequeue/Chart.yaml \
-            deploy/helm/kubequeue/values.yaml \
-            README.md \
-            deploy/helm/kubequeue/README.md \
-            CHANGELOG.md
-          if git diff --cached --quiet; then
-            echo "No version changes were generated for ${RELEASE_TAG}."
-            exit 1
-          fi
-          git commit -m "build(release): prepare ${RELEASE_TAG}"
-          git push --set-upstream origin "${RELEASE_BRANCH}"
-
-      - name: Open release pull request
-        if: steps.existing.outputs.pr_url == ''
-        id: pull-request
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_BRANCH: release/${{ inputs.release_tag }}
-          RELEASE_TAG: ${{ inputs.release_tag }}
-          TARGET_BRANCH: ${{ inputs.target_branch }}
-        run: |
-          pr_url="$(gh pr create \
+          release_sha="$(git rev-parse HEAD)"
+          successful_run="$(gh run list \
             --repo "${GITHUB_REPOSITORY}" \
-            --base "${TARGET_BRANCH}" \
-            --head "${RELEASE_BRANCH}" \
-            --title "build(release): prepare ${RELEASE_TAG}" \
-            --body "$(cat <<EOF
-          ## Summary
+            --workflow ci.yml \
+            --branch master \
+            --commit "${release_sha}" \
+            --event push \
+            --status success \
+            --limit 1 \
+            --json databaseId \
+            --jq '.[0].databaseId // empty')"
+          if [[ -z "${successful_run}" ]]; then
+            echo "Master commit ${release_sha} does not have a successful push CI run."
+            echo "Wait for KubeQueue CI to finish successfully, then retry this workflow."
+            exit 1
+          fi
 
-          - Synchronize package, Helm chart, image, documentation, and changelog versions for ${RELEASE_TAG}.
-          - Create ${RELEASE_TAG} from ${TARGET_BRANCH} only after this pull request is reviewed and merged.
+          echo "sha=${release_sha}" >> "${GITHUB_OUTPUT}"
+          echo "version=${RELEASE_TAG#v}" >> "${GITHUB_OUTPUT}"
+          echo "Verified master commit ${release_sha} with CI run ${successful_run}."
 
-          ## Change type
-
-          - [ ] Feature
-          - [ ] Bug fix
-          - [ ] Refactor
-          - [ ] Documentation
-          - [x] Build, CI, or developer tooling
-          - [x] Deployment or operations
-
-          ## Related work
-
-          - Issue: Not applicable
-          - ADR or design document: Not applicable; release automation does not change a system boundary.
-          - Follow-up to: Automated release request for ${RELEASE_TAG}.
-
-          ## Implementation notes
-
-          - Target branch: \`${TARGET_BRANCH}\`
-          - Release tag: \`${RELEASE_TAG}\`
-          - Merging this pull request creates the immutable tag and dispatches the publication workflow.
-
-          ## Validation
-
-          - [ ] \`pnpm format:check\`
-          - [ ] \`pnpm lint\`
-          - [ ] \`pnpm typecheck\`
-          - [ ] \`pnpm test\`
-          - [ ] \`pnpm build\`
-          - [ ] \`docker compose config --quiet\`
-          - [ ] OpenAPI and generated-client changes validated
-          - [ ] Helm chart validated
-
-          Testing evidence:
-
-          \`\`\`text
-          CI is dispatched for the generated release branch after this pull request is opened.
-          \`\`\`
-
-          ## UI evidence
-
-          Not applicable; no user interface behavior changes.
-
-          ## Risk and rollout
-
-          - Risk: Publishing is blocked unless every tracked release version matches ${RELEASE_TAG}.
-          - Rollback: Close this pull request without merging; no tag or artifact will be created.
-          - Configuration or migration: None.
-
-          ## Reviewer notes
-
-          - Confirm the selected target branch and release tag before merging.
-          - Confirm the changelog content accurately describes this release.
-
-          ## Final checklist
-
-          - [x] The change is focused and follows repository architecture.
-          - [ ] Tests cover changed behavior or the absence of tests is explained.
-          - [x] Documentation and examples are updated.
-          - [x] No credentials, local state, or generated build output are committed.
-          - [x] Breaking changes and follow-up work are clearly recorded.
-          EOF
-          )")"
-          echo "pr_url=${pr_url}" >> "${GITHUB_OUTPUT}"
-          echo "Opened release pull request: ${pr_url}"
-
-      - name: Dispatch CI for generated branch
-        if: steps.existing.outputs.pr_url == ''
+      - name: Dispatch release publication
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_BRANCH: release/${{ inputs.release_tag }}
-        run: gh workflow run ci.yml --repo "${GITHUB_REPOSITORY}" --ref "${RELEASE_BRANCH}"
+          RELEASE_SHA: ${{ steps.release.outputs.sha }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          gh workflow run release.yml \
+            --repo "${GITHUB_REPOSITORY}" \
+            --ref master \
+            -f release_sha="${RELEASE_SHA}" \
+            -f release_tag="${RELEASE_TAG}"
+          echo "Dispatched ${RELEASE_TAG} from verified master commit ${RELEASE_SHA}."
