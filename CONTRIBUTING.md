@@ -37,3 +37,9 @@ strict and may not use `any` to bypass contract or state modeling.
 - Commit generated clients only with the contract change that produced them.
 - Explain user-visible behavior and operational impact in pull requests.
 - Prefer focused commits with imperative messages such as `build: establish Go linting`.
+
+## Pull requests
+
+Use `.github/pull_request_template.md` without removing sections. Check only validations that
+actually completed, include command results, and mark irrelevant sections as `Not applicable` with
+a reason. Cursor-generated commits and pull requests follow `.cursor/rules/contribution-workflow.mdc`.

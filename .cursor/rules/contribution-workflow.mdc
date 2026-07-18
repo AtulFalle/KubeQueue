@@ -1,0 +1,26 @@
+---
+description: Commit messages and pull request documentation
+alwaysApply: true
+---
+
+# Contribution Workflow
+
+## Commits
+
+- Generate commit messages from the complete staged diff.
+- Use `type(scope): imperative outcome`, for example `build(ci): validate pull requests`.
+- Use `feat`, `fix`, `refactor`, `test`, `docs`, `build`, `ci`, or `chore` as the type.
+- Keep the subject concise and explain the reason in the body when it is not obvious.
+- Never claim tests or checks that were not run.
+- Keep unrelated changes in separate commits.
+
+## Pull requests
+
+- Always read `.github/pull_request_template.md` before drafting or creating a PR.
+- Populate every section from the full branch diff and commit history.
+- Check validation boxes only for commands that completed successfully.
+- Record failed or unavailable checks under Testing evidence.
+- Use `Not applicable` with a brief reason instead of deleting sections.
+- Link related issues and ADRs so decisions remain traceable.
+- Describe user impact, architecture changes, risk, rollback, and follow-up work concretely.
+- Include screenshots or recordings for visible UI changes.
