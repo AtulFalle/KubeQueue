@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -24,6 +25,7 @@ func TestPostgresCreateAndClaimIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
+	resetIntegrationDatabase(t, store)
 	name := "integration-" + strconv.FormatInt(time.Now().UTC().UnixNano(), 10)
 	job, err := store.Create(ctx, domain.CreateJob{
 		Name: name, Namespace: "default", Template: json.RawMessage(`{
@@ -57,6 +59,7 @@ func TestPostgresConcurrentCreateAssignsUniquePositions(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
+	resetIntegrationDatabase(t, store)
 	const count = 8
 	prefix := "concurrent-" + strconv.FormatInt(time.Now().UTC().UnixNano(), 10)
 	positions := make(chan int64, count)
@@ -101,5 +104,25 @@ func TestPostgresConcurrentCreateAssignsUniquePositions(t *testing.T) {
 	}
 	if len(seen) != count {
 		t.Fatalf("created %d unique positions, want %d", len(seen), count)
+	}
+}
+
+func resetIntegrationDatabase(t *testing.T, store *Store) {
+	t.Helper()
+	var databaseName string
+	if err := store.db.QueryRowContext(t.Context(), `SELECT current_database()`).Scan(&databaseName); err != nil {
+		t.Fatalf("read integration database name: %v", err)
+	}
+	if !strings.Contains(strings.ToLower(databaseName), "test") {
+		t.Fatalf("refusing to reset non-test database %q", databaseName)
+	}
+	if _, err := store.db.ExecContext(
+		t.Context(),
+		`TRUNCATE TABLE job_events, scheduler_claims, jobs RESTART IDENTITY CASCADE`,
+	); err != nil {
+		t.Fatalf("reset integration database: %v", err)
+	}
+	if _, err := store.db.ExecContext(t.Context(), `DELETE FROM scheduler_lease`); err != nil {
+		t.Fatalf("reset scheduler lease: %v", err)
 	}
 }
