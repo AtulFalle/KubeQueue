@@ -16,6 +16,7 @@ concurrency:
 
 env:
   CI: 'true'
+  NX_CLOUD_ACCESS_TOKEN: ${{ secrets.NX_CLOUD_ACCESS_TOKEN }}
   NX_DAEMON: 'false'
 
 jobs:
@@ -28,6 +29,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v7.0.0
         with:
+          filter: tree:0
           fetch-depth: 0
 
       - name: Set affected range
@@ -83,28 +85,8 @@ jobs:
         working-directory: apps/control-plane
         run: go mod download
 
-      - name: Check formatting
-        shell: bash
-        run: |
-          pnpm nx format:check --base="${NX_BASE}" --head="${NX_HEAD}"
-          mapfile -t go_files < <(git diff --name-only --diff-filter=ACMR "${NX_BASE}" "${NX_HEAD}" -- '*.go')
-          unformatted="$(if ((${#go_files[@]})); then gofmt -l "${go_files[@]}"; fi)"
-          if [[ -n "${unformatted}" ]]; then
-            printf '%s\n' "${unformatted}"
-            exit 1
-          fi
-
-      - name: Lint affected projects
-        run: pnpm nx affected -t lint --exclude=deploy --base="${NX_BASE}" --head="${NX_HEAD}"
-
-      - name: Lint deployment configuration
-        shell: bash
-        run: |
-          if git diff --quiet "${NX_BASE}" "${NX_HEAD}" -- deploy compose.yaml; then
-            echo "No deployment changes; skipping deployment lint."
-          else
-            pnpm nx run deploy:lint
-          fi
+      - name: Check formatting and lint changed projects
+        run: pnpm check:changed -- --base="${NX_BASE}" --head="${NX_HEAD}"
 
       - name: Test affected projects
         run: pnpm nx affected -t test --base="${NX_BASE}" --head="${NX_HEAD}"

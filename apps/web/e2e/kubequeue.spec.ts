@@ -3,8 +3,8 @@ import { expect, test } from '@playwright/test';
 test('submits a Job and opens its durable detail', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('link', { name: 'Submit job' }).click();
-  await page.getByLabel('Name').fill(`e2e-${Date.now()}`);
-  await page.getByLabel('Namespace').fill('default');
+  await page.getByLabel('Name', { exact: true }).fill(`e2e-${Date.now()}`);
+  await page.getByLabel('Namespace', { exact: true }).fill('default');
   await page.getByRole('button', { name: 'Add to queue' }).click();
 
   await expect(page).toHaveURL(/\/jobs\/[0-9a-f-]+$/);

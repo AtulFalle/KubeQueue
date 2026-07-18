@@ -27,8 +27,14 @@ pnpm nx run control-plane:test
 pnpm nx run deploy:helm-template
 ```
 
+Installing dependencies configures a pre-commit hook that runs the same changed-file formatting and
+lint checks as CI. Run it directly with `pnpm check:changed -- --staged`.
+
 Go code must pass `gofmt`, `go vet`, `golangci-lint`, and race-enabled tests. TypeScript must remain
 strict and may not use `any` to bypass contract or state modeling.
+
+CI uses Nx Cloud for remote task caching. Repository maintainers must configure a
+`NX_CLOUD_ACCESS_TOKEN` Actions secret; keep personal tokens in an untracked `nx-cloud.env` file.
 
 ## Change discipline
 

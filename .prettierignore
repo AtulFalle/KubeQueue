@@ -3,6 +3,8 @@ coverage
 dist
 deploy/helm/kubequeue/templates
 node_modules
+playwright-report
+test-results
 apps/web/next-env.d.ts
 packages/api-client/src/generated.ts
 pnpm-lock.yaml

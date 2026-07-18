@@ -14,6 +14,7 @@ concurrency:
 
 env:
   CI: 'true'
+  NX_CLOUD_ACCESS_TOKEN: ${{ secrets.NX_CLOUD_ACCESS_TOKEN }}
   NX_DAEMON: 'false'
 
 jobs:
@@ -37,7 +38,6 @@ jobs:
           --health-retries 10
     env:
       KUBEQUEUE_TEST_POSTGRES_URL: postgres://kubequeue:kubequeue@localhost:5432/kubequeue_test?sslmode=disable
-      NX_SKIP_NX_CACHE: 'true'
 
     steps:
       - name: Check out release tag
@@ -108,11 +108,7 @@ jobs:
         shell: bash
         run: |
           pnpm format:check
-          unformatted="$(git ls-files -z '*.go' | xargs -0 gofmt -l)"
-          if [[ -n "${unformatted}" ]]; then
-            printf '%s\n' "${unformatted}"
-            exit 1
-          fi
+          pnpm nx run control-plane:format-check
           pnpm nx run api-client:generate
           git diff --exit-code -- packages/api-client/src/generated.ts
 

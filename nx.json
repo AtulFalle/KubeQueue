@@ -1,6 +1,7 @@
 {
   "$schema": "./node_modules/nx/schemas/nx-schema.json",
   "defaultBase": "master",
+  "nxCloudId": "6a5b9bb0b60585f77b3a165b",
   "namedInputs": {
     "default": ["{projectRoot}/**/*", "sharedGlobals"],
     "production": [
@@ -9,12 +10,19 @@
       "!{projectRoot}/**/*.test.*",
       "!{projectRoot}/vitest.config.*"
     ],
+    "go": ["default", { "runtime": "go version" }, { "runtime": "go env GOOS GOARCH" }],
+    "goProduction": [
+      "production",
+      { "runtime": "go version" },
+      { "runtime": "go env GOOS GOARCH" }
+    ],
     "sharedGlobals": [
       "{workspaceRoot}/nx.json",
       "{workspaceRoot}/package.json",
       "{workspaceRoot}/pnpm-lock.yaml",
       "{workspaceRoot}/tsconfig.base.json",
-      "{workspaceRoot}/go.work"
+      "{workspaceRoot}/go.work",
+      "{workspaceRoot}/go.work.sum"
     ]
   },
   "targetDefaults": {
@@ -32,6 +40,10 @@
       "inputs": ["default", "^production"]
     },
     "typecheck": {
+      "cache": true,
+      "inputs": ["default", "^production"]
+    },
+    "format-check": {
       "cache": true,
       "inputs": ["default", "^production"]
     },

@@ -10,6 +10,7 @@
   "scripts": {
     "build": "nx run-many -t build",
     "check": "nx run-many -t lint,typecheck,test,build",
+    "check:changed": "node tools/check-changed.mjs",
     "dev": "nx run deploy:dev-stack",
     "dev:down": "nx run deploy:dev-down",
     "dev:logs": "nx run deploy:dev-logs",
@@ -19,6 +20,7 @@
     "go:tidy": "nx run control-plane:tidy",
     "graph": "nx graph",
     "lint": "nx run-many -t lint",
+    "prepare": "husky",
     "test": "nx run-many -t test",
     "typecheck": "nx run-many -t typecheck"
   },
@@ -27,6 +29,7 @@
     "@redocly/cli": "2.39.0",
     "eslint": "9.39.5",
     "eslint-config-next": "16.2.10",
+    "husky": "^9.1.7",
     "nx": "23.0.1",
     "openapi-typescript": "^7.13.0",
     "prettier": "3.9.5",

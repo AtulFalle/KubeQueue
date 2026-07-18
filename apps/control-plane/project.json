@@ -8,6 +8,7 @@
   "targets": {
     "build": {
       "executor": "nx:run-commands",
+      "inputs": ["goProduction", "^production"],
       "outputs": ["{workspaceRoot}/dist/apps/control-plane"],
       "options": {
         "commands": [
@@ -21,6 +22,7 @@
     },
     "lint": {
       "executor": "nx:run-commands",
+      "inputs": ["go", "^production", "{workspaceRoot}/compose.yaml"],
       "options": {
         "commands": [
           "docker compose run --rm --no-deps go-lint go vet ./...",
@@ -31,6 +33,7 @@
     },
     "typecheck": {
       "executor": "nx:run-commands",
+      "inputs": ["go", "^production"],
       "options": {
         "command": "go test -run=^$ ./...",
         "cwd": "apps/control-plane"
@@ -38,10 +41,23 @@
     },
     "test": {
       "executor": "nx:run-commands",
+      "inputs": ["go", "^production", { "env": "KUBEQUEUE_TEST_POSTGRES_URL" }],
       "outputs": ["{projectRoot}/coverage.out"],
       "options": {
         "command": "node -e \"const { spawnSync } = require('node:child_process'); const args = ['test', ...(process.platform === 'win32' ? [] : ['-race']), '-coverprofile=coverage.out', './...']; process.exit(spawnSync('go', args, { stdio: 'inherit' }).status ?? 1)\"",
         "cwd": "apps/control-plane"
+      }
+    },
+    "format-check": {
+      "executor": "nx:run-commands",
+      "inputs": [
+        "go",
+        "^production",
+        "{workspaceRoot}/tools/check-go-format.mjs",
+        { "env": "KUBEQUEUE_FORMAT_FILES" }
+      ],
+      "options": {
+        "command": "node tools/check-go-format.mjs"
       }
     },
     "tidy": {
