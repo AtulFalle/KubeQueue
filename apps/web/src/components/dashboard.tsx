@@ -157,9 +157,9 @@ export function Dashboard({
             See Kubernetes work in one place, shape the queue, and act without a workflow engine.
           </p>
         </div>
-        <Link className="button primary" href="/jobs/new">
+        <a className="button primary" href="/jobs/new">
           Submit job
-        </Link>
+        </a>
       </section>
 
       <section className="metrics" aria-label="Job summary">
