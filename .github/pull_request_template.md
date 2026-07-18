@@ -2,7 +2,7 @@
 
 <!-- Explain what changed, why it was needed, and the user or operator outcome. -->
 
-- 
+-
 
 ## Change type
 
@@ -25,7 +25,7 @@
 
 <!-- Record important design choices, affected boundaries, migrations, and compatibility details. -->
 
-- 
+-
 
 ## Validation
 
@@ -62,7 +62,7 @@ Commands and relevant results
 
 <!-- Call out files, assumptions, edge cases, or decisions that need focused review. -->
 
-- 
+-
 
 ## Final checklist
 

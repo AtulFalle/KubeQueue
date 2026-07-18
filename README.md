@@ -1,7 +1,8 @@
 # KubeQueue
 
-KubeQueue is a lightweight control plane for standard Kubernetes batch Jobs. This repository
-currently contains the engineering foundation only; product features are intentionally absent.
+KubeQueue is a lightweight control plane for standard Kubernetes batch Jobs. It adds queueing,
+priority, delayed execution, lifecycle control, history, and a focused dashboard without replacing
+Kubernetes or requiring a custom resource.
 
 ## Repository layout
 
@@ -92,9 +93,26 @@ pnpm check
 See [docs/architecture.md](docs/architecture.md) and
 [CONTRIBUTING.md](CONTRIBUTING.md) before implementing product behavior.
 
+## Phase 1 behavior
+
+- Submit standard Kubernetes Job templates or automatically adopt Jobs in watched namespaces.
+- Filter live state by status, priority, namespace, team label, and name with shareable URLs.
+- Reorder and reprioritize queued work, with global and per-namespace concurrency controls.
+- Pause, resume, terminate, and retry while preserving immutable attempt history.
+- Delay execution until a one-time scheduled instant.
+- Consume changes through the REST API, generated TypeScript client, or live SSE stream.
+
+Kubernetes remains authoritative for observed execution state. KubeQueue persists desired state and
+history in PostgreSQL; SQLite is supported only for a single-process local loop. See
+[docs/architecture.md](docs/architecture.md) for lifecycle and adoption semantics.
+
+The worker watches Jobs and Pods through client-go informers. New Jobs remain suspended until their
+Kubernetes identity is persisted, and PostgreSQL leases plus expiring row claims prevent duplicate
+admission across worker replicas.
+
 ## Continuous integration
 
 Pull requests and pushes to `master` run the GitHub Actions quality gate in
-`.github/workflows/ci.yml`. It validates Go formatting, Docker Compose, OpenAPI, and Helm; runs Go
-and TypeScript linting and type checks; executes tests with the Go race detector; and builds every
-Nx project with a build target.
+`.github/workflows/ci.yml`. It validates Go formatting, generated-client drift, Docker Compose,
+OpenAPI, and Helm; runs Go, PostgreSQL, React accessibility, and TypeScript checks; builds every Nx
+project with a build target; and exercises scheduling, adoption, and lifecycle flows on kind.

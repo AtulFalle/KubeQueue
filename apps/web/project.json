@@ -13,6 +13,7 @@
     },
     "build": {
       "executor": "nx:run-commands",
+      "cache": false,
       "outputs": ["{projectRoot}/.next"],
       "options": {
         "command": "pnpm --filter @kubequeue/web build"
@@ -34,6 +35,19 @@
       "executor": "nx:run-commands",
       "options": {
         "command": "pnpm --filter @kubequeue/web typecheck"
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm --filter @kubequeue/web test"
+      }
+    },
+    "e2e": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "pnpm --filter @kubequeue/web e2e"
       }
     }
   }

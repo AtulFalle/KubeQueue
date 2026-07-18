@@ -20,13 +20,31 @@ env:
 
 jobs:
   quality:
-    name: Validate, lint, test, and build
+    name: Format, lint, test, and build
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v7.0.0
+        with:
+          fetch-depth: 0
+
+      - name: Set affected range
+        shell: bash
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [[ "${EVENT_NAME}" == "pull_request" ]]; then
+            base="${BASE_SHA}"
+          elif [[ "${EVENT_NAME}" == "push" && "${BEFORE_SHA}" != "0000000000000000000000000000000000000000" ]]; then
+            base="${BEFORE_SHA}"
+          else
+            base="$(git rev-parse HEAD~1)"
+          fi
+          printf 'NX_BASE=%s\nNX_HEAD=%s\n' "${base}" "${GITHUB_SHA}" >> "${GITHUB_ENV}"
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v6.0.9
@@ -37,61 +55,59 @@ jobs:
         uses: actions/setup-node@v7.0.0
         with:
           node-version: 24.18.0
-          package-manager-cache: false
+          cache: pnpm
+
+      - name: Install JavaScript dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Detect affected projects
+        id: affected
+        shell: bash
+        run: |
+          affected_projects="$(pnpm nx show projects --affected --base="${NX_BASE}" --head="${NX_HEAD}")"
+          printf '%s\n' "${affected_projects}"
+          if grep -Fxq 'control-plane' <<< "${affected_projects}"; then
+            echo "control_plane=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "control_plane=false" >> "${GITHUB_OUTPUT}"
+          fi
 
       - name: Set up Go
+        if: steps.affected.outputs.control_plane == 'true'
         uses: actions/setup-go@v6.5.0
         with:
           go-version: 1.26.5
-          cache: false
-
-      - name: Set up Helm
-        uses: azure/setup-helm@v5.0.1
-        with:
-          version: v4.2.3
-
-      - name: Install JavaScript dependencies
-        shell: bash
-        run: |
-          if [[ -f pnpm-lock.yaml ]]; then
-            pnpm install --frozen-lockfile
-          else
-            pnpm install --no-frozen-lockfile
-          fi
-          pnpm rebuild
 
       - name: Download Go dependencies
+        if: steps.affected.outputs.control_plane == 'true'
         working-directory: apps/control-plane
         run: go mod download
 
-      - name: Validate configuration
+      - name: Check formatting
         shell: bash
         run: |
-          unformatted="$(git ls-files -z '*.go' | xargs -0 gofmt -l)"
+          pnpm nx format:check --base="${NX_BASE}" --head="${NX_HEAD}"
+          mapfile -t go_files < <(git diff --name-only --diff-filter=ACMR "${NX_BASE}" "${NX_HEAD}" -- '*.go')
+          unformatted="$(if ((${#go_files[@]})); then gofmt -l "${go_files[@]}"; fi)"
           if [[ -n "${unformatted}" ]]; then
             printf '%s\n' "${unformatted}"
             exit 1
           fi
-          docker compose config --quiet
-          pnpm nx run api-contract:lint
-          helm lint deploy/helm/kubequeue
-          helm template kubequeue deploy/helm/kubequeue
 
-      - name: Lint Go
-        uses: golangci/golangci-lint-action@v9.3.0
-        with:
-          version: v2.12.2
-          working-directory: apps/control-plane
-          args: --timeout=5m
+      - name: Lint affected projects
+        run: pnpm nx affected -t lint --exclude=deploy --base="${NX_BASE}" --head="${NX_HEAD}"
 
-      - name: Lint TypeScript
-        run: pnpm nx run-many -t lint --projects=web,api-client
+      - name: Lint deployment configuration
+        shell: bash
+        run: |
+          if git diff --quiet "${NX_BASE}" "${NX_HEAD}" -- deploy compose.yaml; then
+            echo "No deployment changes; skipping deployment lint."
+          else
+            pnpm nx run deploy:lint
+          fi
 
-      - name: Type-check
-        run: pnpm typecheck
+      - name: Test affected projects
+        run: pnpm nx affected -t test --base="${NX_BASE}" --head="${NX_HEAD}"
 
-      - name: Test
-        run: pnpm test
-
-      - name: Build
-        run: pnpm build
+      - name: Build affected projects
+        run: pnpm nx affected -t build --base="${NX_BASE}" --head="${NX_HEAD}"

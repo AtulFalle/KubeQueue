@@ -5,27 +5,47 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/AtulFalle/KubeQueue/apps/control-plane/internal/adapters/persistence"
+	"github.com/AtulFalle/KubeQueue/apps/control-plane/internal/application"
 	"github.com/gin-gonic/gin"
 )
 
 const shutdownTimeout = 10 * time.Second
 
-// Run starts the platform HTTP server. Product routes are added in later milestones.
+// Run starts the platform HTTP server.
 func Run(ctx context.Context) error {
+	store, err := persistence.Open(ctx, os.Getenv("KUBEQUEUE_DATABASE_URL"))
+	if err != nil {
+		return err
+	}
+	defer func() { _ = store.Close() }()
+	if os.Getenv("KUBEQUEUE_MIGRATE_ONLY") == "true" {
+		return nil
+	}
+
 	router := gin.New()
 	router.Use(
-		gin.Logger(),
+		requestLogger(),
 		gin.Recovery(),
 		corsMiddleware(os.Getenv("KUBEQUEUE_CORS_ALLOWED_ORIGINS")),
 	)
 	router.GET("/healthz", func(c *gin.Context) {
 		c.Status(http.StatusNoContent)
 	})
+	router.GET("/readyz", func(c *gin.Context) {
+		if err := store.Ping(c.Request.Context()); err != nil {
+			c.Status(http.StatusServiceUnavailable)
+			return
+		}
+		c.Status(http.StatusNoContent)
+	})
+	registerAPI(router, application.NewJobs(store), store, os.Getenv("KUBEQUEUE_ADMIN_TOKEN"))
 
 	server := &http.Server{
 		Addr:              address(),
@@ -51,6 +71,20 @@ func Run(ctx context.Context) error {
 			return fmt.Errorf("shutdown HTTP: %w", err)
 		}
 		return nil
+	}
+}
+
+func requestLogger() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		started := time.Now()
+		c.Next()
+		slog.Info("http request",
+			"operation", "http_request",
+			"method", c.Request.Method,
+			"path", c.FullPath(),
+			"status", c.Writer.Status(),
+			"duration_ms", time.Since(started).Milliseconds(),
+		)
 	}
 }
 

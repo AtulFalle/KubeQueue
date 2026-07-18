@@ -30,6 +30,15 @@ spec:
           ports:
             - name: http
               containerPort: 3000
+          env:
+            - name: KUBEQUEUE_API_INTERNAL_URL
+              value: http://{{ include "kubequeue.fullname" . }}-api:8080
+            - name: KUBEQUEUE_ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "kubequeue.fullname" . }}-config
+                  key: admin-token
+                  optional: true
           volumeMounts:
             - name: next-cache
               mountPath: /app/apps/web/.next/cache

@@ -40,7 +40,7 @@
       "executor": "nx:run-commands",
       "outputs": ["{projectRoot}/coverage.out"],
       "options": {
-        "command": "go test -race -coverprofile=coverage.out ./...",
+        "command": "node -e \"const { spawnSync } = require('node:child_process'); const args = ['test', ...(process.platform === 'win32' ? [] : ['-race']), '-coverprofile=coverage.out', './...']; process.exit(spawnSync('go', args, { stdio: 'inherit' }).status ?? 1)\"",
         "cwd": "apps/control-plane"
       }
     },

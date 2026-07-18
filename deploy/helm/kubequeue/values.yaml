@@ -1,9 +1,23 @@
-nameOverride: ""
-fullnameOverride: ""
+nameOverride: ''
+fullnameOverride: ''
 
 serviceAccount:
   create: true
-  name: ""
+  name: ''
+
+config:
+  watchNamespaces: ''
+  globalConcurrency: 10
+  namespaceConcurrency: 5
+  adminToken: ''
+
+database:
+  url: ''
+  existingSecret: ''
+  existingSecretKey: database-url
+
+networkPolicy:
+  enabled: false
 
 api:
   image:
