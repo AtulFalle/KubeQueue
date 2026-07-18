@@ -1,4 +1,4 @@
-`name: CI
+name: KubeQueue CI
 
 on:
   pull_request:
