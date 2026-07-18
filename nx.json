@@ -10,15 +10,25 @@
       "!{projectRoot}/**/*.test.*",
       "!{projectRoot}/vitest.config.*"
     ],
-    "go": ["default", { "runtime": "go version" }, { "runtime": "go env GOOS GOARCH" }],
+    "go": [
+      "default",
+      "!{projectRoot}/coverage.out",
+      { "runtime": "go version" },
+      { "runtime": "go env GOOS GOARCH" }
+    ],
     "goProduction": [
       "production",
+      "!{projectRoot}/**/*_test.go",
+      "!{projectRoot}/coverage.out",
       { "runtime": "go version" },
       { "runtime": "go env GOOS GOARCH" }
     ],
     "sharedGlobals": [
       "{workspaceRoot}/nx.json",
-      "{workspaceRoot}/package.json",
+      {
+        "json": "{workspaceRoot}/package.json",
+        "fields": ["packageManager", "engines", "dependencies", "devDependencies"]
+      },
       "{workspaceRoot}/pnpm-lock.yaml",
       "{workspaceRoot}/tsconfig.base.json",
       "{workspaceRoot}/go.work",

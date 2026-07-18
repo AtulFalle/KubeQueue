@@ -5,13 +5,12 @@ on:
   push:
     branches:
       - master
-  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.head.sha || github.sha }}
   cancel-in-progress: true
 
 env:
@@ -24,6 +23,22 @@ jobs:
     name: Format, lint, test, and build
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:18.4-alpine
+        env:
+          POSTGRES_DB: kubequeue_test
+          POSTGRES_PASSWORD: kubequeue
+          POSTGRES_USER: kubequeue
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U kubequeue -d kubequeue_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      KUBEQUEUE_TEST_POSTGRES_URL: postgres://kubequeue:kubequeue@localhost:5432/kubequeue_test?sslmode=disable
 
     steps:
       - name: Check out repository
@@ -73,23 +88,38 @@ jobs:
           else
             echo "control_plane=false" >> "${GITHUB_OUTPUT}"
           fi
+          if grep -Fxq 'web' <<< "${affected_projects}"; then
+            echo "web=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "web=false" >> "${GITHUB_OUTPUT}"
+          fi
 
       - name: Set up Go
         if: steps.affected.outputs.control_plane == 'true'
         uses: actions/setup-go@v6.5.0
         with:
           go-version: 1.26.5
+          cache-dependency-path: apps/control-plane/go.sum
 
       - name: Download Go dependencies
         if: steps.affected.outputs.control_plane == 'true'
         working-directory: apps/control-plane
         run: go mod download
 
+      - name: Verify generated API client
+        run: |
+          pnpm nx run api-client:generate
+          git diff --exit-code -- packages/api-client/src/generated.ts
+
+      - name: Validate GitHub Actions workflows
+        run: pnpm nx run deploy:workflow-lint
+
       - name: Check formatting and lint changed projects
         run: pnpm check:changed -- --base="${NX_BASE}" --head="${NX_HEAD}"
 
-      - name: Test affected projects
-        run: pnpm nx affected -t test --base="${NX_BASE}" --head="${NX_HEAD}"
+      - name: Type-check, test, and build affected non-web projects
+        run: pnpm nx affected -t typecheck,test,build --exclude=web --base="${NX_BASE}" --head="${NX_HEAD}" --parallel=3
 
-      - name: Build affected projects
-        run: pnpm nx affected -t build --base="${NX_BASE}" --head="${NX_HEAD}"
+      - name: Type-check, test, and build web
+        if: steps.affected.outputs.web == 'true'
+        run: pnpm nx run-many -t typecheck,test,ci-build --projects=web --parallel=3

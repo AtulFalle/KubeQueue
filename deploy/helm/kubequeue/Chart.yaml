@@ -2,8 +2,8 @@ apiVersion: v2
 name: kubequeue
 description: Lightweight control plane for Kubernetes batch jobs
 type: application
-version: 0.1.3
-appVersion: '0.1.3'
+version: 0.0.0
+appVersion: dev
 kubeVersion: '>=1.31.0-0'
 home: https://github.com/AtulFalle/KubeQueue
 sources:

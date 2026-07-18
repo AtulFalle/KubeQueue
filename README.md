@@ -9,7 +9,7 @@ Kubernetes or requiring a custom resource.
 > upgrade compatibility, or multi-user authorization. The dashboard is an administrative surface:
 > keep it cluster-private and access it through authenticated Kubernetes port-forwarding.
 
-## Install the v0.1.3 preview
+## Install a preview release
 
 Prerequisites:
 
@@ -32,7 +32,7 @@ Install the OCI chart:
 
 ```bash
 helm install kubequeue oci://ghcr.io/atulfalle/charts/kubequeue \
-  --version 0.1.3 \
+  --version <release-version> \
   --namespace kubequeue \
   --set-string database.existingSecret=kubequeue-database \
   --set-string config.adminTokenExistingSecret=kubequeue-admin
@@ -160,10 +160,10 @@ admission across worker replicas.
 ## Continuous integration
 
 Pull requests and pushes to `master` run the GitHub Actions quality gate in
-`.github/workflows/ci.yml`. It uses Nx to format, lint, test, and build affected projects. Deployment
-configuration is linted only when `deploy/**` or `compose.yaml` changes. Tag-driven release checks
-validate the complete tree, PostgreSQL integration tests, production images, and the packaged Helm
-chart before publishing.
+`.github/workflows/ci.yml`. It uses Nx to format, lint, type-check, test, and build affected projects,
+including PostgreSQL integration tests. Releases are allowed only from an exact successful
+`master` SHA. Release automation builds each production image once, scans and smoke-tests those
+images, then promotes the tested manifests and publishes the dynamically versioned Helm chart.
 
 ## Release status and support
 
