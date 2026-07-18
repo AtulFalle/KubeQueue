@@ -169,5 +169,22 @@ services:
     ports:
       - '8082:8080'
 
+  go-lint:
+    image: golangci/golangci-lint:v2.12.2-alpine
+    profiles: [tools]
+    working_dir: /workspace
+    entrypoint: []
+    command: ['golangci-lint', 'run']
+    volumes:
+      - ./apps/control-plane:/workspace
+
+  helm:
+    image: alpine/helm:4.2.3
+    profiles: [tools]
+    working_dir: /workspace
+    entrypoint: []
+    volumes:
+      - ./deploy:/workspace/deploy:ro
+
 volumes:
   kubequeue-postgres:

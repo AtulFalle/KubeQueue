@@ -1,3 +1,4 @@
+// Package httpserver configures and runs the control-plane HTTP server.
 package httpserver
 
 import (

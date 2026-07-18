@@ -11,8 +11,8 @@
       "options": {
         "commands": [
           "docker compose config --quiet",
-          "helm lint deploy/helm/kubequeue",
-          "helm template kubequeue deploy/helm/kubequeue"
+          "docker compose run --rm --no-deps helm helm lint deploy/helm/kubequeue",
+          "docker compose run --rm --no-deps helm helm template kubequeue deploy/helm/kubequeue"
         ],
         "parallel": false
       }
@@ -51,13 +51,13 @@
     "helm-lint": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "helm lint deploy/helm/kubequeue"
+        "command": "docker compose run --rm --no-deps helm helm lint deploy/helm/kubequeue"
       }
     },
     "helm-template": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "helm template kubequeue deploy/helm/kubequeue"
+        "command": "docker compose run --rm --no-deps helm helm template kubequeue deploy/helm/kubequeue"
       }
     },
     "kind-create": {

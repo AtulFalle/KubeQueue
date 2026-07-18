@@ -1,3 +1,4 @@
+// Package main starts the KubeQueue API process.
 package main
 
 import (
@@ -11,11 +12,16 @@ import (
 )
 
 func main() {
+	os.Exit(run())
+}
+
+func run() int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	if err := httpserver.Run(ctx); err != nil {
 		slog.Error("API stopped", "error", err)
-		os.Exit(1)
+		return 1
 	}
+	return 0
 }

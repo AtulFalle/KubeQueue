@@ -49,7 +49,7 @@ func TestCORSMiddleware(t *testing.T) {
 				c.Status(http.StatusNoContent)
 			})
 
-			request := httptest.NewRequest(tt.method, "/test", nil)
+			request := httptest.NewRequestWithContext(t.Context(), tt.method, "/test", nil)
 			if tt.origin != "" {
 				request.Header.Set("Origin", tt.origin)
 			}

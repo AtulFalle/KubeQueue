@@ -22,8 +22,10 @@
     "lint": {
       "executor": "nx:run-commands",
       "options": {
-        "commands": ["go vet ./...", "golangci-lint run"],
-        "cwd": "apps/control-plane",
+        "commands": [
+          "docker compose run --rm --no-deps go-lint go vet ./...",
+          "docker compose run --rm --no-deps go-lint golangci-lint run"
+        ],
         "parallel": false
       }
     },
