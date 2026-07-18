@@ -90,12 +90,20 @@ export function JobForm() {
               onChange={(event) => setTemplate(event.target.value)}
               aria-describedby="manifest-help"
             />
-            <small id="manifest-help">A standard batch/v1 Job. KubeQueue adds its management label.</small>
+            <small id="manifest-help">
+              A standard batch/v1 Job. KubeQueue adds its management label.
+            </small>
           </label>
         </div>
-        {error ? <div className="alert" role="alert">{error}</div> : null}
+        {error ? (
+          <div className="alert" role="alert">
+            {error}
+          </div>
+        ) : null}
         <div className="form-actions">
-          <button className="button ghost" type="button" onClick={() => router.back()}>Cancel</button>
+          <button className="button ghost" type="button" onClick={() => router.back()}>
+            Cancel
+          </button>
           <button className="button primary" disabled={submitting} type="submit">
             {submitting ? 'Submitting…' : 'Add to queue'}
           </button>

@@ -68,45 +68,85 @@ export function JobDetail({
   }
 
   if (!job) {
-    return <main className="page-shell">{error ? <div className="alert">{error}</div> : <p>Loading…</p>}</main>;
+    return (
+      <main className="page-shell">
+        {error ? <div className="alert">{error}</div> : <p>Loading…</p>}
+      </main>
+    );
   }
 
   return (
     <main className="page-shell narrow">
-      <Link className="back-link" href="/">← All jobs</Link>
+      <Link className="back-link" href="/">
+        ← All jobs
+      </Link>
       <section className="detail-header">
         <div>
-          <p className="eyebrow">{job.namespace} / attempt {job.attempt}</p>
+          <p className="eyebrow">
+            {job.namespace} / attempt {job.attempt}
+          </p>
           <h1>{job.name}</h1>
           <Status state={job.observedState} />
         </div>
         <div className="action-bar">
           {job.observedState === 'PAUSED' ? (
-            <button className="button primary" onClick={() => void command('resume')}>Resume</button>
+            <button className="button primary" onClick={() => void command('resume')}>
+              Resume
+            </button>
           ) : null}
           {job.observedState === 'RUNNING' || job.desiredState === 'QUEUED' ? (
-            <button className="button ghost" onClick={() => void command('pause')}>Pause</button>
+            <button className="button ghost" onClick={() => void command('pause')}>
+              Pause
+            </button>
           ) : null}
           {job.observedState === 'FAILED' || job.desiredState === 'CANCELLED' ? (
-            <button className="button ghost" onClick={() => void command('retry')}>Retry</button>
+            <button className="button ghost" onClick={() => void command('retry')}>
+              Retry
+            </button>
           ) : null}
           {!['COMPLETED', 'CANCELLED'].includes(job.observedState) ? (
-            <button className="button danger-button" onClick={() => void command('terminate')}>Terminate</button>
+            <button className="button danger-button" onClick={() => void command('terminate')}>
+              Terminate
+            </button>
           ) : null}
         </div>
       </section>
-      {error ? <div className="alert" role="alert">{error}</div> : null}
+      {error ? (
+        <div className="alert" role="alert">
+          {error}
+        </div>
+      ) : null}
 
       <section className="detail-grid">
         <article className="panel facts">
           <h2>Execution</h2>
           <dl>
-            <div><dt>Desired state</dt><dd>{job.desiredState}</dd></div>
-            <div><dt>Queue position</dt><dd>{job.position}</dd></div>
-            <div><dt>Priority</dt><dd>{job.priority}</dd></div>
-            <div><dt>Team</dt><dd>{job.team || 'Unassigned'}</dd></div>
-            <div><dt>Scheduled</dt><dd>{job.scheduledFor ? new Date(job.scheduledFor).toLocaleString() : 'Immediately'}</dd></div>
-            <div><dt>Kubernetes UID</dt><dd className="mono">{job.kubernetesUid || 'Pending admission'}</dd></div>
+            <div>
+              <dt>Desired state</dt>
+              <dd>{job.desiredState}</dd>
+            </div>
+            <div>
+              <dt>Queue position</dt>
+              <dd>{job.position}</dd>
+            </div>
+            <div>
+              <dt>Priority</dt>
+              <dd>{job.priority}</dd>
+            </div>
+            <div>
+              <dt>Team</dt>
+              <dd>{job.team || 'Unassigned'}</dd>
+            </div>
+            <div>
+              <dt>Scheduled</dt>
+              <dd>
+                {job.scheduledFor ? new Date(job.scheduledFor).toLocaleString() : 'Immediately'}
+              </dd>
+            </div>
+            <div>
+              <dt>Kubernetes UID</dt>
+              <dd className="mono">{job.kubernetesUid || 'Pending admission'}</dd>
+            </div>
           </dl>
         </article>
         <article className="panel timeline">
@@ -116,7 +156,10 @@ export function JobDetail({
             {events.map((event) => (
               <li key={event.id}>
                 <i aria-hidden="true" />
-                <div><strong>{event.message}</strong><span>{event.type}</span></div>
+                <div>
+                  <strong>{event.message}</strong>
+                  <span>{event.type}</span>
+                </div>
                 <time dateTime={event.createdAt}>{new Date(event.createdAt).toLocaleString()}</time>
               </li>
             ))}
@@ -125,7 +168,9 @@ export function JobDetail({
       </section>
       <section className="panel manifest">
         <h2>Stored Job template</h2>
-        <pre><code>{JSON.stringify(job.template, null, 2)}</code></pre>
+        <pre>
+          <code>{JSON.stringify(job.template, null, 2)}</code>
+        </pre>
       </section>
     </main>
   );

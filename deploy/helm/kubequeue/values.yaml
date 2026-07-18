@@ -1,19 +1,19 @@
-nameOverride: ""
-fullnameOverride: ""
+nameOverride: ''
+fullnameOverride: ''
 
 serviceAccount:
   create: true
-  name: ""
+  name: ''
 
 config:
-  watchNamespaces: ""
+  watchNamespaces: ''
   globalConcurrency: 10
   namespaceConcurrency: 5
-  adminToken: ""
+  adminToken: ''
 
 database:
-  url: ""
-  existingSecret: ""
+  url: ''
+  existingSecret: ''
   existingSecretKey: database-url
 
 networkPolicy:

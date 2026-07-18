@@ -90,8 +90,7 @@ export class KubeQueueClient {
     });
     if (!response.ok) {
       const payload = (await response.json().catch(() => undefined)) as
-        | { error?: { code?: string; message?: string } }
-        | undefined;
+        { error?: { code?: string; message?: string } } | undefined;
       throw new ApiError(
         response.status,
         payload?.error?.code ?? 'REQUEST_FAILED',

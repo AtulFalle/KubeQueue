@@ -16,11 +16,11 @@ spec:
         - name: postgres
           image: postgres:18.4-alpine
           env:
-            - {name: POSTGRES_DB, value: kubequeue}
-            - {name: POSTGRES_USER, value: kubequeue}
-            - {name: POSTGRES_PASSWORD, value: kubequeue}
+            - { name: POSTGRES_DB, value: kubequeue }
+            - { name: POSTGRES_USER, value: kubequeue }
+            - { name: POSTGRES_PASSWORD, value: kubequeue }
           ports:
-            - {name: postgres, containerPort: 5432}
+            - { name: postgres, containerPort: 5432 }
           readinessProbe:
             exec:
               command: [pg_isready, -U, kubequeue, -d, kubequeue]
@@ -33,4 +33,4 @@ spec:
   selector:
     app: postgres
   ports:
-    - {name: postgres, port: 5432, targetPort: postgres}
+    - { name: postgres, port: 5432, targetPort: postgres }

@@ -183,7 +183,11 @@ export function Dashboard({
         <div className="filters">
           <label>
             <span>Search</span>
-            <input value={search} onChange={(event) => setFilter('search', event.target.value)} placeholder="Job name" />
+            <input
+              value={search}
+              onChange={(event) => setFilter('search', event.target.value)}
+              placeholder="Job name"
+            />
           </label>
           <label>
             <span>Status</span>
@@ -195,11 +199,19 @@ export function Dashboard({
           </label>
           <label>
             <span>Namespace</span>
-            <input value={namespace} onChange={(event) => setFilter('namespace', event.target.value)} placeholder="All" />
+            <input
+              value={namespace}
+              onChange={(event) => setFilter('namespace', event.target.value)}
+              placeholder="All"
+            />
           </label>
           <label>
             <span>Team</span>
-            <input value={team} onChange={(event) => setFilter('team', event.target.value)} placeholder="All" />
+            <input
+              value={team}
+              onChange={(event) => setFilter('team', event.target.value)}
+              placeholder="All"
+            />
           </label>
           <label>
             <span>Priority</span>
@@ -214,7 +226,11 @@ export function Dashboard({
           </label>
         </div>
 
-        {error ? <div className="alert" role="alert">{error}</div> : null}
+        {error ? (
+          <div className="alert" role="alert">
+            {error}
+          </div>
+        ) : null}
         {loading ? <p className="empty">Loading cluster state…</p> : null}
         {!loading && jobs.length === 0 ? (
           <div className="empty">
@@ -238,12 +254,16 @@ export function Dashboard({
               </div>
               <div className="job-identity">
                 <Link href={`/jobs/${job.id}`}>{job.name}</Link>
-                <span>{job.namespace} · {job.team || 'unassigned'}</span>
+                <span>
+                  {job.namespace} · {job.team || 'unassigned'}
+                </span>
               </div>
               <Status state={job.observedState} />
               <div className="job-meta">
                 <span>P{job.priority}</span>
-                <span>{job.scheduledFor ? new Date(job.scheduledFor).toLocaleString() : 'Ready now'}</span>
+                <span>
+                  {job.scheduledFor ? new Date(job.scheduledFor).toLocaleString() : 'Ready now'}
+                </span>
               </div>
               {job.desiredState === 'QUEUED' || job.desiredState === 'PAUSED' ? (
                 <QueueEditor
@@ -260,12 +280,16 @@ export function Dashboard({
                       aria-label={`Move ${job.name} up`}
                       disabled={queueIndexes.get(job.id) === 0}
                       onClick={() => void move(job.id, -1)}
-                    >↑</button>
+                    >
+                      ↑
+                    </button>
                     <button
                       aria-label={`Move ${job.name} down`}
                       disabled={queueIndexes.get(job.id) === queued.length - 1}
                       onClick={() => void move(job.id, 1)}
-                    >↓</button>
+                    >
+                      ↓
+                    </button>
                   </>
                 ) : null}
                 {job.observedState === 'RUNNING' || job.desiredState === 'QUEUED' ? (
@@ -274,11 +298,13 @@ export function Dashboard({
                 {job.observedState === 'PAUSED' ? (
                   <button onClick={() => void command(job, 'resume')}>Resume</button>
                 ) : null}
-                {(job.observedState === 'FAILED' || job.desiredState === 'CANCELLED') ? (
+                {job.observedState === 'FAILED' || job.desiredState === 'CANCELLED' ? (
                   <button onClick={() => void command(job, 'retry')}>Retry</button>
                 ) : null}
                 {!['COMPLETED', 'CANCELLED'].includes(job.observedState) ? (
-                  <button className="danger" onClick={() => void command(job, 'terminate')}>Terminate</button>
+                  <button className="danger" onClick={() => void command(job, 'terminate')}>
+                    Terminate
+                  </button>
                 ) : null}
               </div>
             </article>

@@ -29,17 +29,18 @@ async function createJob(
   return response.json() as Promise<{ id: string; version: number }>;
 }
 
-async function waitForState(
-  request: APIRequestContext,
-  id: string,
-  expected: string[],
-) {
-  await expect.poll(async () => {
-    const response = await request.get(`/api/v1/jobs/${id}`);
-    if (!response.ok()) return false;
-    const job = await response.json() as { observedState: string };
-    return expected.includes(job.observedState);
-  }, { timeout: 90_000 }).toBeTruthy();
+async function waitForState(request: APIRequestContext, id: string, expected: string[]) {
+  await expect
+    .poll(
+      async () => {
+        const response = await request.get(`/api/v1/jobs/${id}`);
+        if (!response.ok()) return false;
+        const job = (await response.json()) as { observedState: string };
+        return expected.includes(job.observedState);
+      },
+      { timeout: 90_000 },
+    )
+    .toBeTruthy();
 }
 
 test('reorders delayed work and creates immutable retry lineage', async ({ request }) => {
@@ -48,7 +49,7 @@ test('reorders delayed work and creates immutable retry lineage', async ({ reque
   const first = await createJob(request, `e2e-delayed-a-${suffix}`, 'echo a', scheduledFor);
   const second = await createJob(request, `e2e-delayed-b-${suffix}`, 'echo b', scheduledFor);
   const list = await request.get('/api/v1/jobs?status=QUEUED');
-  const jobs = await list.json() as {
+  const jobs = (await list.json()) as {
     items: Array<{ id: string; version: number }>;
     queueVersion: number;
   };
@@ -62,7 +63,7 @@ test('reorders delayed work and creates immutable retry lineage', async ({ reque
   expect(terminate.ok()).toBeTruthy();
   const retry = await request.post(`/api/v1/jobs/${first.id}/actions/retry`);
   expect(retry.ok()).toBeTruthy();
-  const retried = await retry.json() as { parentId?: string; attempt: number };
+  const retried = (await retry.json()) as { parentId?: string; attempt: number };
   expect(retried.parentId).toBe(first.id);
   expect(retried.attempt).toBe(2);
 });

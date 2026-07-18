@@ -13,10 +13,14 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
   return (
     <html lang="en">
       <body>
-        <a className="skip-link" href="#main-content">Skip to content</a>
+        <a className="skip-link" href="#main-content">
+          Skip to content
+        </a>
         <header className="site-header">
           <Link className="brand" href="/">
-            <span className="brand-mark" aria-hidden="true">KQ</span>
+            <span className="brand-mark" aria-hidden="true">
+              KQ
+            </span>
             <span>KubeQueue</span>
           </Link>
           <nav aria-label="Primary navigation">
@@ -26,7 +30,9 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
           </nav>
           <span className="cluster-indicator">Live inventory</span>
         </header>
-        <div id="main-content" tabIndex={-1}>{children}</div>
+        <div id="main-content" tabIndex={-1}>
+          {children}
+        </div>
       </body>
     </html>
   );

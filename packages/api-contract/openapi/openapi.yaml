@@ -18,21 +18,21 @@ paths:
       description: Returns jobs matching the supplied inventory filters.
       operationId: listJobs
       parameters:
-        - {$ref: '#/components/parameters/Status'}
-        - {$ref: '#/components/parameters/Namespace'}
-        - {$ref: '#/components/parameters/Team'}
-        - {$ref: '#/components/parameters/Priority'}
+        - { $ref: '#/components/parameters/Status' }
+        - { $ref: '#/components/parameters/Namespace' }
+        - { $ref: '#/components/parameters/Team' }
+        - { $ref: '#/components/parameters/Priority' }
         - name: search
           in: query
-          schema: {type: string}
+          schema: { type: string }
       responses:
         '200':
           description: Matching jobs
           content:
             application/json:
-              schema: {$ref: '#/components/schemas/JobList'}
-        '400': {$ref: '#/components/responses/Error'}
-        '401': {$ref: '#/components/responses/Error'}
+              schema: { $ref: '#/components/schemas/JobList' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
     post:
       summary: Submit a job
       description: Persists a standard Kubernetes Job template for queued execution.
@@ -41,19 +41,19 @@ paths:
         required: true
         content:
           application/json:
-            schema: {$ref: '#/components/schemas/CreateJob'}
+            schema: { $ref: '#/components/schemas/CreateJob' }
       responses:
         '201':
           description: Job queued
           content:
             application/json:
-              schema: {$ref: '#/components/schemas/Job'}
-        '400': {$ref: '#/components/responses/Error'}
-        '401': {$ref: '#/components/responses/Error'}
-        '422': {$ref: '#/components/responses/Error'}
+              schema: { $ref: '#/components/schemas/Job' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
   /jobs/{jobId}:
     parameters:
-      - {$ref: '#/components/parameters/JobId'}
+      - { $ref: '#/components/parameters/JobId' }
     get:
       summary: Get a job
       description: Returns the durable desired and Kubernetes-observed state for one job.
@@ -63,13 +63,13 @@ paths:
           description: Job detail
           content:
             application/json:
-              schema: {$ref: '#/components/schemas/Job'}
-        '400': {$ref: '#/components/responses/Error'}
-        '401': {$ref: '#/components/responses/Error'}
-        '404': {$ref: '#/components/responses/Error'}
+              schema: { $ref: '#/components/schemas/Job' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
   /jobs/{jobId}/events:
     parameters:
-      - {$ref: '#/components/parameters/JobId'}
+      - { $ref: '#/components/parameters/JobId' }
     get:
       summary: List job events
       description: Returns immutable lifecycle events for one job.
@@ -85,12 +85,12 @@ paths:
                 properties:
                   items:
                     type: array
-                    items: {$ref: '#/components/schemas/JobEvent'}
-        '401': {$ref: '#/components/responses/Error'}
-        '404': {$ref: '#/components/responses/Error'}
+                    items: { $ref: '#/components/schemas/JobEvent' }
+        '401': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
   /jobs/{jobId}/actions/{action}:
     parameters:
-      - {$ref: '#/components/parameters/JobId'}
+      - { $ref: '#/components/parameters/JobId' }
       - name: action
         in: path
         required: true
@@ -106,13 +106,13 @@ paths:
           description: Updated job or new retry attempt
           content:
             application/json:
-              schema: {$ref: '#/components/schemas/Job'}
-        '400': {$ref: '#/components/responses/Error'}
-        '401': {$ref: '#/components/responses/Error'}
-        '409': {$ref: '#/components/responses/Error'}
+              schema: { $ref: '#/components/schemas/Job' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
   /jobs/{jobId}/queue:
     parameters:
-      - {$ref: '#/components/parameters/JobId'}
+      - { $ref: '#/components/parameters/JobId' }
     patch:
       summary: Update a queue entry
       description: Changes queue priority and position using optimistic concurrency.
@@ -125,9 +125,9 @@ paths:
               type: object
               required: [priority, position, version]
               properties:
-                priority: {type: integer, minimum: -1000, maximum: 1000}
-                position: {type: integer, minimum: 1}
-                version: {type: integer, minimum: 1}
+                priority: { type: integer, minimum: -1000, maximum: 1000 }
+                position: { type: integer, minimum: 1 }
+                version: { type: integer, minimum: 1 }
                 scheduledFor:
                   type: [string, 'null']
                   format: date-time
@@ -136,10 +136,10 @@ paths:
           description: Updated queue entry
           content:
             application/json:
-              schema: {$ref: '#/components/schemas/Job'}
-        '400': {$ref: '#/components/responses/Error'}
-        '401': {$ref: '#/components/responses/Error'}
-        '409': {$ref: '#/components/responses/Error'}
+              schema: { $ref: '#/components/schemas/Job' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
   /queue/order:
     put:
       summary: Reorder queued jobs
@@ -156,8 +156,8 @@ paths:
                 jobIds:
                   type: array
                   minItems: 1
-                  items: {type: string, format: uuid}
-                version: {type: integer, minimum: 0}
+                  items: { type: string, format: uuid }
+                version: { type: integer, minimum: 0 }
       responses:
         '200':
           description: New queue version
@@ -167,10 +167,10 @@ paths:
                 type: object
                 required: [version]
                 properties:
-                  version: {type: integer}
-        '400': {$ref: '#/components/responses/Error'}
-        '401': {$ref: '#/components/responses/Error'}
-        '409': {$ref: '#/components/responses/Error'}
+                  version: { type: integer }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
   /events:
     get:
       summary: Stream job changes
@@ -181,8 +181,8 @@ paths:
           description: Server-sent job snapshots
           content:
             text/event-stream:
-              schema: {type: string}
-        '401': {$ref: '#/components/responses/Error'}
+              schema: { type: string }
+        '401': { $ref: '#/components/responses/Error' }
 components:
   securitySchemes:
     bearerAuth:
@@ -193,29 +193,29 @@ components:
       name: jobId
       in: path
       required: true
-      schema: {type: string, format: uuid}
+      schema: { type: string, format: uuid }
     Status:
       name: status
       in: query
-      schema: {$ref: '#/components/schemas/JobState'}
+      schema: { $ref: '#/components/schemas/JobState' }
     Namespace:
       name: namespace
       in: query
-      schema: {type: string}
+      schema: { type: string }
     Team:
       name: team
       in: query
-      schema: {type: string}
+      schema: { type: string }
     Priority:
       name: priority
       in: query
-      schema: {type: integer, minimum: -1000, maximum: 1000}
+      schema: { type: integer, minimum: -1000, maximum: 1000 }
   responses:
     Error:
       description: Request failed
       content:
         application/json:
-          schema: {$ref: '#/components/schemas/ErrorResponse'}
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
   schemas:
     JobState:
       type: string
@@ -223,54 +223,66 @@ components:
     Job:
       type: object
       required:
-        [id, name, namespace, priority, position, desiredState, observedState, template,
-         attempt, version, createdAt, updatedAt]
+        [
+          id,
+          name,
+          namespace,
+          priority,
+          position,
+          desiredState,
+          observedState,
+          template,
+          attempt,
+          version,
+          createdAt,
+          updatedAt,
+        ]
       properties:
-        id: {type: string, format: uuid}
-        parentId: {type: string, format: uuid}
-        name: {type: string}
-        namespace: {type: string}
-        team: {type: string}
-        priority: {type: integer}
-        position: {type: integer}
-        desiredState: {$ref: '#/components/schemas/JobState'}
-        observedState: {$ref: '#/components/schemas/JobState'}
-        scheduledFor: {type: string, format: date-time}
-        kubernetesUid: {type: string}
-        template: {type: object, additionalProperties: true}
-        attempt: {type: integer}
-        version: {type: integer}
-        createdAt: {type: string, format: date-time}
-        updatedAt: {type: string, format: date-time}
+        id: { type: string, format: uuid }
+        parentId: { type: string, format: uuid }
+        name: { type: string }
+        namespace: { type: string }
+        team: { type: string }
+        priority: { type: integer }
+        position: { type: integer }
+        desiredState: { $ref: '#/components/schemas/JobState' }
+        observedState: { $ref: '#/components/schemas/JobState' }
+        scheduledFor: { type: string, format: date-time }
+        kubernetesUid: { type: string }
+        template: { type: object, additionalProperties: true }
+        attempt: { type: integer }
+        version: { type: integer }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
     JobList:
       type: object
       required: [items, count, queueVersion]
       properties:
         items:
           type: array
-          items: {$ref: '#/components/schemas/Job'}
-        count: {type: integer}
-        queueVersion: {type: integer, minimum: 0}
+          items: { $ref: '#/components/schemas/Job' }
+        count: { type: integer }
+        queueVersion: { type: integer, minimum: 0 }
     CreateJob:
       type: object
       required: [name, namespace, template]
       properties:
-        name: {type: string, minLength: 1}
-        namespace: {type: string, minLength: 1}
-        team: {type: string}
-        priority: {type: integer, minimum: -1000, maximum: 1000, default: 0}
-        scheduledFor: {type: string, format: date-time}
-        template: {type: object, additionalProperties: true}
+        name: { type: string, minLength: 1 }
+        namespace: { type: string, minLength: 1 }
+        team: { type: string }
+        priority: { type: integer, minimum: -1000, maximum: 1000, default: 0 }
+        scheduledFor: { type: string, format: date-time }
+        template: { type: object, additionalProperties: true }
     JobEvent:
       type: object
       required: [id, jobId, type, message, createdAt]
       properties:
-        id: {type: integer}
-        jobId: {type: string, format: uuid}
-        type: {type: string}
-        message: {type: string}
-        data: {type: object, additionalProperties: true}
-        createdAt: {type: string, format: date-time}
+        id: { type: integer }
+        jobId: { type: string, format: uuid }
+        type: { type: string }
+        message: { type: string }
+        data: { type: object, additionalProperties: true }
+        createdAt: { type: string, format: date-time }
     ErrorResponse:
       type: object
       required: [error]
@@ -279,6 +291,6 @@ components:
           type: object
           required: [code, message, status]
           properties:
-            code: {type: string}
-            message: {type: string}
-            status: {type: integer}
+            code: { type: string }
+            message: { type: string }
+            status: { type: integer }

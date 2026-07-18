@@ -11,7 +11,7 @@ type HomePageProps = {
 export default async function HomePage({ searchParams }: HomePageProps) {
   const query = await searchParams;
   const filters: JobFilters = {
-    status: typeof query.status === 'string' ? query.status as JobFilters['status'] : undefined,
+    status: typeof query.status === 'string' ? (query.status as JobFilters['status']) : undefined,
     namespace: typeof query.namespace === 'string' ? query.namespace : undefined,
     team: typeof query.team === 'string' ? query.team : undefined,
     search: typeof query.search === 'string' ? query.search : undefined,

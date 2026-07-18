@@ -35,12 +35,19 @@ describe('Dashboard', () => {
     replace.mockClear();
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue(new Response(JSON.stringify({
-        items: [job], count: 1, queueVersion: 1,
-      }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      })),
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            items: [job],
+            count: 1,
+            queueVersion: 1,
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          },
+        ),
+      ),
     );
   });
 

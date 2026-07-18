@@ -22,9 +22,7 @@ async function proxy(request: Request, context: RouteContext) {
   if (token) headers.set('authorization', `Bearer ${token}`);
 
   const body =
-    request.method === 'GET' || request.method === 'HEAD'
-      ? undefined
-      : await request.arrayBuffer();
+    request.method === 'GET' || request.method === 'HEAD' ? undefined : await request.arrayBuffer();
   const response = await fetch(target, {
     method: request.method,
     headers,
