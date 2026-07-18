@@ -9,7 +9,7 @@ Kubernetes or requiring a custom resource.
 > upgrade compatibility, or multi-user authorization. The dashboard is an administrative surface:
 > keep it cluster-private and access it through authenticated Kubernetes port-forwarding.
 
-## Install the v0.1.0 preview
+## Install the v0.1.3 preview
 
 Prerequisites:
 
@@ -32,7 +32,7 @@ Install the OCI chart:
 
 ```bash
 helm install kubequeue oci://ghcr.io/atulfalle/charts/kubequeue \
-  --version 0.1.0 \
+  --version 0.1.3 \
   --namespace kubequeue \
   --set-string database.existingSecret=kubequeue-database \
   --set-string config.adminTokenExistingSecret=kubequeue-admin

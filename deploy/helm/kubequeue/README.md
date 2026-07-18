@@ -1,11 +1,11 @@
 # KubeQueue Helm chart
 
-This chart installs the KubeQueue v0.1.0 developer preview. It deploys the API, worker, web
+This chart installs the KubeQueue v0.1.3 developer preview. It deploys the API, worker, web
 dashboard, migration hook, namespace-scoped RBAC, and internal Services. PostgreSQL is not bundled.
 
 ## Security and support
 
-v0.1.0 is not production-supported and does not guarantee upgrades or rollback compatibility. The
+v0.1.3 is not production-supported and does not guarantee upgrades or rollback compatibility. The
 dashboard is a single-administrator interface. Keep the web Service cluster-private and access it
 through authenticated Kubernetes port-forwarding. Do not add a public Ingress without an external
 authentication layer.
@@ -35,7 +35,7 @@ Install the published chart:
 
 ```bash
 helm install kubequeue oci://ghcr.io/atulfalle/charts/kubequeue \
-  --version 0.1.0 \
+  --version 0.1.3 \
   --namespace kubequeue \
   --set-string database.existingSecret=kubequeue-database \
   --set-string config.adminTokenExistingSecret=kubequeue-admin
@@ -68,7 +68,7 @@ proxying API requests, so anyone who can reach the dashboard has administrative 
 | `database.existingSecretKey`         | PostgreSQL URL key                                                                 | `database-url` |
 | `networkPolicy.enabled`              | Restrict ingress to same-release pods                                              | `false`        |
 
-Image repositories and tags default to the v0.1.0 GHCR release. Override them only when testing a
+Image repositories and tags default to the v0.1.3 GHCR release. Override them only when testing a
 custom build.
 
 ## Upgrade and rollback
