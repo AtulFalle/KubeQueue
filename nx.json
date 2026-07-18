@@ -40,5 +40,6 @@
       "continuous": true
     }
   },
-  "plugins": []
+  "plugins": [],
+  "analytics": false
 }

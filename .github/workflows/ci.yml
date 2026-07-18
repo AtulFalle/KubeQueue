@@ -58,6 +58,7 @@ jobs:
           else
             pnpm install --no-frozen-lockfile
           fi
+          pnpm rebuild
 
       - name: Download Go dependencies
         working-directory: apps/control-plane

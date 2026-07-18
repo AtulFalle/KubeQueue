@@ -42,6 +42,13 @@
         "cwd": "apps/control-plane"
       }
     },
+    "tidy": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "docker compose run --rm --build --no-deps --volume ./apps/control-plane:/workspace/apps/control-plane api go mod tidy"
+      }
+    },
     "serve-api": {
       "executor": "nx:run-commands",
       "options": {

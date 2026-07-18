@@ -46,7 +46,8 @@ untracked `.env` file when needed. In Adminer, choose PostgreSQL and use server 
 `docker compose down` to remove containers. The database volume is preserved.
 
 After Node dependencies are installed locally, `pnpm dev` runs the same Compose workflow through
-Nx. Use `pnpm dev:down` and `pnpm dev:logs` for lifecycle and logs.
+Nx. Use `pnpm go:tidy` to generate Go module checksums inside Docker without installing Go on the
+host. Use `pnpm dev:down` and `pnpm dev:logs` for lifecycle and logs.
 
 ## Optional native toolchain
 
@@ -66,11 +67,11 @@ For native linting, tests, builds, or kind/Tilt development, install those tools
 corepack enable
 pnpm install
 go work sync
-go mod tidy -C apps/control-plane
+go -C apps/control-plane mod tidy
 pnpm check
 ```
 
-Commit the generated `pnpm-lock.yaml` and `apps/control-plane/go.sum` before enabling CI.
+Commit `pnpm-lock.yaml` and `apps/control-plane/go.sum` for reproducible CI.
 
 ## Common tasks
 
@@ -79,6 +80,7 @@ pnpm dev
 pnpm dev:down
 pnpm dev:logs
 pnpm dev:web
+pnpm go:tidy
 pnpm nx run control-plane:serve-api
 pnpm nx run control-plane:serve-worker
 pnpm nx run api-contract:lint

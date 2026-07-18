@@ -16,6 +16,7 @@
     "dev:web": "nx run web:dev",
     "format": "nx format:write",
     "format:check": "nx format:check",
+    "go:tidy": "nx run control-plane:tidy",
     "graph": "nx graph",
     "lint": "nx run-many -t lint",
     "test": "nx run-many -t test",
