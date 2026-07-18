@@ -4,6 +4,7 @@ node_modules/
 dist/
 coverage/
 .nx/
+*.tsbuildinfo
 
 # Go
 bin/

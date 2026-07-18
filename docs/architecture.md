@@ -6,7 +6,7 @@ KubeQueue is split into three runtime processes built from two applications:
 
 - `web`: Next.js user interface. It consumes only the generated API client.
 - `api`: Gin HTTP process. It validates commands and invokes application use cases.
-- `worker`: Go process. It will schedule work and reconcile desired state with Kubernetes.
+- `worker`: Go process. It schedules work and reconciles desired state with Kubernetes.
 
 The API and worker share one Go module and domain model but have separate composition roots and
 deployments. They communicate through durable state rather than in-memory calls.
@@ -42,10 +42,28 @@ transport types. Interfaces are defined by the package that consumes them.
 - Desired and observed state are stored separately and converged idempotently.
 - Standard Kubernetes Jobs are managed directly; no custom resource is introduced in Phase 1.
 
+## Scheduling and recovery consistency
+
+The worker uses client-go shared informers for Job and Pod events in every configured namespace.
+Informer caches are synchronized before reconciliation starts; a periodic recovery pass covers
+missed or coalesced events. Managed Kubernetes Jobs are created with `spec.suspend=true`. The
+worker records the Kubernetes UID durably before removing suspension, so work cannot begin before
+the control-plane association exists.
+
+Production scheduling combines a renewable PostgreSQL scheduler lease with expiring per-job
+claims. Eligible rows are selected with row locks and `SKIP LOCKED`, and claims survive process
+failure only until their expiry. Queue ordering has its own monotonic version in
+`control_plane_metadata`; entity versions are not reused as a queue-wide concurrency token.
+SQLite uses the same schema and transactions but remains limited to one worker.
+
+Schema changes are ordered embedded migrations. PostgreSQL migration execution takes an advisory
+transaction lock, and the Helm chart runs a migration hook before API and worker upgrades.
+
 ## Contract and delivery
 
-OpenAPI is the public contract. Go handlers and the TypeScript client follow it; Kubernetes API
-objects are never exposed as the product API.
+OpenAPI is the public contract. Go handlers and the generated TypeScript client follow it;
+Kubernetes API objects are never exposed as the product API. CI regenerates the client and fails
+when generated output drifts from the contract.
 
 Helm is the deployment source of truth. kind and Tilt provide a local loop over the same images
 and chart. Nx is the task entry point for local development and CI.
@@ -56,3 +74,40 @@ synchronizes source and rebuilds images only when dependency manifests change. T
 same-origin `/api/*` requests to the API service so browser code does not depend on container DNS.
 
 Significant changes to these decisions require an ADR under `docs/adr`.
+
+## Phase 1 lifecycle
+
+Each record stores user intent independently from the state reported by Kubernetes:
+
+```text
+CREATED -> QUEUED -> RUNNING -> COMPLETED
+              |         |
+              v         v
+            PAUSED    PAUSED
+              |         |
+              +-----> RUNNING
+
+Any non-terminal state -> CANCELLED
+RUNNING -> FAILED -> QUEUED (retry creates a new attempt)
+```
+
+Commands are idempotent. Queue order is `priority DESC, position ASC, created_at ASC`; a one-time
+`scheduledFor` timestamp makes a queued job ineligible until that instant. The worker enforces
+global and per-namespace concurrency limits.
+
+New jobs are persisted before Kubernetes objects are created and use the
+`kubequeue.io/job-id` label. Jobs discovered in configured namespaces are automatically adopted,
+including a sanitized snapshot of their specification. Already-running adopted jobs are visible
+and controllable, but cannot be retroactively ordered.
+
+Pausing a queued job changes only durable intent. Pausing a running job sets `spec.suspend=true`;
+Kubernetes terminates active Pods and resumes with new Pods when suspension is removed. Termination
+deletes the Kubernetes Job while KubeQueue retains its history. Retry always creates a new attempt
+from the stored template.
+
+## Phase 1 trust boundary
+
+The API is intended for cluster-internal or otherwise trusted networks and supports a single
+deployment-wide bearer token. Kubernetes access is limited to configured namespaces through the
+worker service account. Multi-user identity, team RBAC, quotas, logs, metrics insights, recurring
+schedules, Kueue, and preemption are deferred.

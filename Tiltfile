@@ -12,7 +12,13 @@ docker_build(
 )
 docker_build('kubequeue-web', '.', dockerfile='apps/web/Dockerfile')
 
-k8s_yaml(helm('deploy/helm/kubequeue', name='kubequeue'))
+k8s_yaml('deploy/kind/postgres.yaml')
+k8s_yaml(helm(
+    'deploy/helm/kubequeue',
+    name='kubequeue',
+    set=['database.url=postgres://kubequeue:kubequeue@postgres:5432/kubequeue?sslmode=disable'],
+))
 
+k8s_resource('postgres')
 k8s_resource('kubequeue-kubequeue-api', port_forwards='8080:8080')
 k8s_resource('kubequeue-kubequeue-web', port_forwards='3000:3000')

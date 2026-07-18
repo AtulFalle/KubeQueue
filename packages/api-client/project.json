@@ -6,6 +6,13 @@
   "implicitDependencies": ["api-contract"],
   "tags": ["type:lib", "scope:shared"],
   "targets": {
+    "generate": {
+      "executor": "nx:run-commands",
+      "outputs": ["{projectRoot}/src/generated.ts"],
+      "options": {
+        "command": "pnpm exec openapi-typescript packages/api-contract/openapi/openapi.yaml -o packages/api-client/src/generated.ts"
+      }
+    },
     "build": {
       "executor": "nx:run-commands",
       "outputs": ["{projectRoot}/dist"],

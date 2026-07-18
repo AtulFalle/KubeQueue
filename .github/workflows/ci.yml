@@ -23,6 +23,24 @@ jobs:
     name: Validate, lint, test, and build
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:18.4-alpine
+        env:
+          POSTGRES_DB: kubequeue_test
+          POSTGRES_PASSWORD: kubequeue
+          POSTGRES_USER: kubequeue
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U kubequeue -d kubequeue_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      CI: 'true'
+      NX_DAEMON: 'false'
+      KUBEQUEUE_TEST_POSTGRES_URL: postgres://kubequeue:kubequeue@localhost:5432/kubequeue_test?sslmode=disable
 
     steps:
       - name: Check out repository
@@ -74,8 +92,10 @@ jobs:
           fi
           docker compose config --quiet
           pnpm nx run api-contract:lint
-          helm lint deploy/helm/kubequeue
-          helm template kubequeue deploy/helm/kubequeue
+          pnpm nx run api-client:generate
+          git diff --exit-code -- packages/api-client/src/generated.ts
+          helm lint deploy/helm/kubequeue --set-string database.url=postgres://example
+          helm template kubequeue deploy/helm/kubequeue --set-string database.url=postgres://example
 
       - name: Lint Go
         uses: golangci/golangci-lint-action@v9.3.0
@@ -95,3 +115,80 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+  kind-smoke:
+    name: kind smoke test
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7.0.0
+      - uses: pnpm/action-setup@v6.0.9
+        with:
+          version: 11.14.0
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 24.18.0
+          package-manager-cache: false
+      - uses: helm/kind-action@v1.12.0
+        with:
+          cluster_name: kubequeue
+          config: deploy/kind/cluster.yaml
+      - name: Build and load images
+        run: |
+          docker build -f apps/control-plane/Dockerfile --build-arg TARGET=api -t kubequeue-api:dev .
+          docker build -f apps/control-plane/Dockerfile --build-arg TARGET=worker -t kubequeue-worker:dev .
+          docker build -f apps/web/Dockerfile -t kubequeue-web:dev .
+          kind load docker-image --name kubequeue kubequeue-api:dev kubequeue-worker:dev kubequeue-web:dev
+      - name: Install dependencies and KubeQueue
+        run: |
+          kubectl create deployment postgres --image=postgres:18.4-alpine
+          kubectl set env deployment/postgres POSTGRES_DB=kubequeue POSTGRES_USER=kubequeue POSTGRES_PASSWORD=kubequeue
+          kubectl expose deployment postgres --port=5432
+          kubectl rollout status deployment/postgres --timeout=120s
+          helm install kubequeue deploy/helm/kubequeue \
+            --set-string database.url='postgres://kubequeue:kubequeue@postgres:5432/kubequeue?sslmode=disable'
+          kubectl rollout status deployment/kubequeue-api --timeout=120s
+          kubectl rollout status deployment/kubequeue-worker --timeout=120s
+          kubectl rollout status deployment/kubequeue-web --timeout=120s
+      - name: Exercise submit, scheduling, and adoption
+        shell: bash
+        run: |
+          kubectl port-forward service/kubequeue-kubequeue-api 18080:8080 >/tmp/kubequeue-port-forward.log 2>&1 &
+          port_forward_pid=$!
+          trap 'kill "${port_forward_pid}"' EXIT
+          for attempt in {1..30}; do
+            curl --fail --silent http://127.0.0.1:18080/healthz >/dev/null && break
+            sleep 1
+          done
+          job_id="$(
+            curl --fail --silent --show-error \
+              -H 'Content-Type: application/json' \
+              -H 'Authorization: Bearer smoke-token' \
+              -d '{"name":"smoke-managed","namespace":"default","template":{"apiVersion":"batch/v1","kind":"Job","spec":{"template":{"spec":{"restartPolicy":"Never","containers":[{"name":"job","image":"busybox:1.36","command":["sh","-c","echo managed"]}]}}}}}' \
+              http://127.0.0.1:18080/api/v1/jobs | jq -r '.id'
+          )"
+          kubectl create job smoke-adopted --image=busybox:1.36 -- sh -c 'echo adopted'
+          for attempt in {1..60}; do
+            managed_state="$(curl --fail --silent -H 'Authorization: Bearer smoke-token' "http://127.0.0.1:18080/api/v1/jobs/${job_id}" | jq -r '.observedState')"
+            adopted_count="$(curl --fail --silent -H 'Authorization: Bearer smoke-token' 'http://127.0.0.1:18080/api/v1/jobs?search=smoke-adopted' | jq '.count')"
+            if [[ "${managed_state}" =~ ^(RUNNING|COMPLETED)$ && "${adopted_count}" -ge 1 ]]; then
+              exit 0
+            fi
+            sleep 2
+          done
+          kubectl get jobs,pods --all-namespaces
+          exit 1
+      - name: Run browser lifecycle scenarios
+        shell: bash
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm exec playwright install --with-deps chromium
+          kubectl port-forward service/kubequeue-kubequeue-web 13000:3000 >/tmp/kubequeue-web-forward.log 2>&1 &
+          web_forward_pid=$!
+          trap 'kill "${web_forward_pid}"' EXIT
+          for attempt in {1..30}; do
+            curl --fail --silent http://127.0.0.1:13000 >/dev/null && break
+            sleep 1
+          done
+          KUBEQUEUE_E2E_BASE_URL=http://127.0.0.1:13000 pnpm nx run web:e2e

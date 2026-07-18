@@ -5,6 +5,20 @@ serviceAccount:
   create: true
   name: ""
 
+config:
+  watchNamespaces: ""
+  globalConcurrency: 10
+  namespaceConcurrency: 5
+  adminToken: ""
+
+database:
+  url: ""
+  existingSecret: ""
+  existingSecretKey: database-url
+
+networkPolicy:
+  enabled: false
+
 api:
   image:
     repository: kubequeue-api

@@ -11,8 +11,8 @@
       "options": {
         "commands": [
           "docker compose config --quiet",
-          "docker compose run --rm --no-deps helm helm lint deploy/helm/kubequeue",
-          "docker compose run --rm --no-deps helm helm template kubequeue deploy/helm/kubequeue"
+          "docker compose run --rm --no-deps helm helm lint deploy/helm/kubequeue --set-string database.url=postgres://example",
+          "docker compose run --rm --no-deps helm helm template kubequeue deploy/helm/kubequeue --set-string database.url=postgres://example"
         ],
         "parallel": false
       }
@@ -51,13 +51,13 @@
     "helm-lint": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "docker compose run --rm --no-deps helm helm lint deploy/helm/kubequeue"
+        "command": "docker compose run --rm --no-deps helm helm lint deploy/helm/kubequeue --set-string database.url=postgres://example"
       }
     },
     "helm-template": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "docker compose run --rm --no-deps helm helm template kubequeue deploy/helm/kubequeue"
+        "command": "docker compose run --rm --no-deps helm helm template kubequeue deploy/helm/kubequeue --set-string database.url=postgres://example"
       }
     },
     "kind-create": {

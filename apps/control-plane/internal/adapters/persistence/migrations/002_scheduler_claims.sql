@@ -1,0 +1,5 @@
+CREATE TABLE IF NOT EXISTS scheduler_claims (
+  job_id TEXT PRIMARY KEY REFERENCES jobs(id) ON DELETE CASCADE,
+  holder TEXT NOT NULL,
+  expires_at TEXT NOT NULL
+);

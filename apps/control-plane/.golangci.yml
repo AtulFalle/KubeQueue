@@ -14,6 +14,11 @@ linters:
     - nilerr
     - noctx
     - revive
+  settings:
+    revive:
+      rules:
+        - name: exported
+          disabled: true
 
 formatters:
   enable:
