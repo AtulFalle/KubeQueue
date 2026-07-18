@@ -1,4 +1,5 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 const [, , command] = process.argv;
@@ -22,10 +23,24 @@ function runHelm(args, captureOutput = false) {
   });
 
   if (result.error?.code === 'ENOENT') {
-    result = spawnSync('docker', ['compose', 'run', '--rm', '--no-deps', 'helm', 'helm', ...args], {
-      encoding: captureOutput ? 'utf8' : undefined,
-      stdio: captureOutput ? ['ignore', 'pipe', 'inherit'] : 'inherit',
-    });
+    result = spawnSync(
+      'docker',
+      [
+        'compose',
+        'run',
+        '--rm',
+        '--no-deps',
+        '--volume',
+        `${resolve('dist')}:/workspace/dist`,
+        'helm',
+        'helm',
+        ...args,
+      ],
+      {
+        encoding: captureOutput ? 'utf8' : undefined,
+        stdio: captureOutput ? ['ignore', 'pipe', 'inherit'] : 'inherit',
+      },
+    );
   }
 
   if (result.error) {
