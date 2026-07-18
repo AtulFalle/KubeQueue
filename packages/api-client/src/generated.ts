@@ -44,7 +44,11 @@ export interface paths {
         get: operations["getJob"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Archive a stale job record
+         * @description Archives a stale durable record without requiring Kubernetes access.
+         */
+        delete: operations["archiveJob"];
         options?: never;
         head?: never;
         patch?: never;
@@ -327,6 +331,30 @@ export interface operations {
             400: components["responses"]["Error"];
             401: components["responses"]["Error"];
             404: components["responses"]["Error"];
+        };
+    };
+    archiveJob: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jobId: components["parameters"]["JobId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Job archived or already archived */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
         };
     };
     listJobEvents: {

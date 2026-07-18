@@ -33,6 +33,10 @@ func TestStoreCreateListAndLifecycle(t *testing.T) {
 	if job.Position != 1 || job.DesiredState != domain.StateQueued {
 		t.Fatalf("created job = %#v", job)
 	}
+	if job.ManagementMode != domain.ManagementManaged ||
+		job.SyncStatus != domain.SyncStatusPending || !job.ActionPending {
+		t.Fatalf("created synchronization state = %#v", job)
+	}
 
 	jobs, err := store.List(context.Background(), ports.JobFilter{Namespace: "batch"})
 	if err != nil || len(jobs) != 1 {
@@ -48,6 +52,71 @@ func TestStoreCreateListAndLifecycle(t *testing.T) {
 	events, err := store.Events(context.Background(), job.ID)
 	if err != nil || len(events) < 2 {
 		t.Fatalf("Events() = %d events, %v", len(events), err)
+	}
+}
+
+func TestStoreRejectsStaleObservationCompareAndSet(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store, err := Open(ctx, "file:test-observation-cas?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	job, err := store.Create(ctx, domain.CreateJob{
+		Name: "job", Namespace: "default", Template: validJobTemplate,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	observedAt := time.Now().UTC()
+	current, err := store.SetObserved(ctx, job.ID, domain.Observation{
+		State: domain.StateRunning, KubernetesUID: "uid", ResourceVersion: "new",
+		ExpectedResourceVersion: "", ObservedAt: observedAt,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, err := store.SetObserved(ctx, job.ID, domain.Observation{
+		State: domain.StateFailed, KubernetesUID: "uid", ResourceVersion: "old",
+		ExpectedResourceVersion: "", ObservedAt: observedAt.Add(-time.Minute),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.ResourceVersion != current.ResourceVersion ||
+		stored.ObservedState != domain.StateRunning {
+		t.Fatalf("stale observation replaced current state: %#v", stored)
+	}
+}
+
+func TestStoreMarksMissingWithoutCancelling(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store, err := Open(ctx, "file:test-missing?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	job, err := store.Create(ctx, domain.CreateJob{
+		Name: "job", Namespace: "default", Template: validJobTemplate,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, err = store.SetObserved(ctx, job.ID, domain.Observation{
+		State: domain.StateRunning, KubernetesUID: "uid", ObservedAt: time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, err = store.MarkMissing(ctx, job.ID, "uid", job.ResourceVersion, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job.SyncStatus != domain.SyncStatusMissing ||
+		job.ObservedState != domain.StateRunning {
+		t.Fatalf("missing Job state = %#v", job)
 	}
 }
 
@@ -147,7 +216,9 @@ func TestStoreDoesNotAutomaticallyRescheduleFailedJobs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.SetObserved(context.Background(), job.ID, domain.StateFailed, "uid"); err != nil {
+	if _, err := store.SetObserved(context.Background(), job.ID, domain.Observation{
+		State: domain.StateFailed, KubernetesUID: "uid", ObservedAt: time.Now().UTC(),
+	}); err != nil {
 		t.Fatal(err)
 	}
 

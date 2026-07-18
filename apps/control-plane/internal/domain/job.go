@@ -20,26 +20,76 @@ const (
 	StateCancelled State = "CANCELLED"
 )
 
-var ErrInvalidTransition = errors.New("invalid lifecycle transition")
+type ManagementMode string
+
+const (
+	ManagementManaged    ManagementMode = "MANAGED"
+	ManagementObserved   ManagementMode = "OBSERVED"
+	ManagementIgnored    ManagementMode = "IGNORED"
+	ManagementConflicted ManagementMode = "CONFLICTED"
+)
+
+type SyncStatus string
+
+const (
+	SyncStatusSynced     SyncStatus = "SYNCED"
+	SyncStatusPending    SyncStatus = "PENDING"
+	SyncStatusMissing    SyncStatus = "MISSING"
+	SyncStatusStale      SyncStatus = "STALE"
+	SyncStatusError      SyncStatus = "ERROR"
+	SyncStatusOutOfScope SyncStatus = "OUT_OF_SCOPE"
+	SyncStatusConflicted SyncStatus = "CONFLICTED"
+)
+
+var (
+	ErrInvalidTransition = errors.New("invalid lifecycle transition")
+	ErrUnmanagedJob      = errors.New("job is not managed by KubeQueue")
+	ErrNotArchivable     = errors.New("job is not stale and cannot be archived")
+)
 var dnsLabel = regexp.MustCompile(`^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$`)
 
 type Job struct {
-	ID            string          `json:"id"`
-	ParentID      string          `json:"parentId,omitempty"`
-	Name          string          `json:"name"`
-	Namespace     string          `json:"namespace"`
-	Team          string          `json:"team,omitempty"`
-	Priority      int             `json:"priority"`
-	Position      int64           `json:"position"`
-	DesiredState  State           `json:"desiredState"`
-	ObservedState State           `json:"observedState"`
-	ScheduledFor  *time.Time      `json:"scheduledFor,omitempty"`
-	KubernetesUID string          `json:"kubernetesUid,omitempty"`
-	Template      json.RawMessage `json:"template"`
-	Attempt       int             `json:"attempt"`
-	Version       int64           `json:"version"`
-	CreatedAt     time.Time       `json:"createdAt"`
-	UpdatedAt     time.Time       `json:"updatedAt"`
+	ID               string          `json:"id"`
+	ParentID         string          `json:"parentId,omitempty"`
+	Name             string          `json:"name"`
+	Namespace        string          `json:"namespace"`
+	Team             string          `json:"team,omitempty"`
+	Priority         int             `json:"priority"`
+	Position         int64           `json:"position"`
+	DesiredState     State           `json:"desiredState"`
+	ObservedState    State           `json:"observedState"`
+	ManagementMode   ManagementMode  `json:"-"`
+	SyncStatus       SyncStatus      `json:"-"`
+	ActionPending    bool            `json:"-"`
+	ObservedReason   string          `json:"-"`
+	ObservedMessage  string          `json:"-"`
+	ObservedAt       *time.Time      `json:"-"`
+	LastError        string          `json:"-"`
+	ScheduledFor     *time.Time      `json:"scheduledFor,omitempty"`
+	KubernetesUID    string          `json:"kubernetesUid,omitempty"`
+	Template         json.RawMessage `json:"template"`
+	Attempt          int             `json:"attempt"`
+	Version          int64           `json:"version"`
+	CreatedAt        time.Time       `json:"createdAt"`
+	UpdatedAt        time.Time       `json:"updatedAt"`
+	ResourceVersion  string          `json:"-"`
+	LastSeenAt       *time.Time      `json:"-"`
+	PendingAction    string          `json:"-"`
+	ReconcileRetries int             `json:"-"`
+	NextReconcileAt  *time.Time      `json:"-"`
+	ArchivedAt       *time.Time      `json:"-"`
+}
+
+type Observation struct {
+	State                   State
+	KubernetesUID           string
+	ResourceVersion         string
+	ExpectedResourceVersion string
+	Reason                  string
+	Message                 string
+	ObservedAt              time.Time
+	ManagementMode          ManagementMode
+	SyncStatus              SyncStatus
 }
 
 type Event struct {
@@ -135,6 +185,32 @@ func CanTransition(from, to State) bool {
 func (j Job) Terminal() bool {
 	return j.ObservedState == StateCompleted || j.ObservedState == StateFailed ||
 		j.DesiredState == StateCancelled
+}
+
+func SynchronizationStatus(desired, observed State) SyncStatus {
+	switch desired {
+	case StateCreated:
+		if observed == StateCreated {
+			return SyncStatusSynced
+		}
+	case StateQueued:
+		if observed == StateCreated || observed == StateQueued || observed == StatePaused {
+			return SyncStatusSynced
+		}
+	case StateRunning:
+		if observed == StateRunning {
+			return SyncStatusSynced
+		}
+	case StatePaused:
+		if observed == StatePaused {
+			return SyncStatusSynced
+		}
+	case StateCompleted, StateFailed, StateCancelled:
+		if observed == desired {
+			return SyncStatusSynced
+		}
+	}
+	return SyncStatusPending
 }
 
 func (s State) Valid() bool {

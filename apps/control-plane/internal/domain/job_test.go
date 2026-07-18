@@ -2,6 +2,7 @@ package domain
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -46,6 +47,51 @@ func TestLifecycleTransitions(t *testing.T) {
 	for _, test := range tests {
 		if got := CanTransition(test.from, test.to); got != test.want {
 			t.Errorf("CanTransition(%s, %s) = %v, want %v", test.from, test.to, got, test.want)
+		}
+	}
+}
+
+func TestSynchronizationStatus(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name              string
+		desired, observed State
+		want              SyncStatus
+	}{
+		{"queued before creation", StateQueued, StateCreated, SyncStatusSynced},
+		{"queued while suspended", StateQueued, StatePaused, SyncStatusSynced},
+		{"pause pending", StatePaused, StateRunning, SyncStatusPending},
+		{"paused", StatePaused, StatePaused, SyncStatusSynced},
+		{"termination pending", StateCancelled, StateRunning, SyncStatusPending},
+		{"terminated", StateCancelled, StateCancelled, SyncStatusSynced},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			if got := SynchronizationStatus(test.desired, test.observed); got != test.want {
+				t.Fatalf("SynchronizationStatus(%s, %s) = %s, want %s",
+					test.desired, test.observed, got, test.want)
+			}
+		})
+	}
+}
+
+func TestReconciliationFieldsAreNotPublicJSON(t *testing.T) {
+	t.Parallel()
+	encoded, err := json.Marshal(Job{
+		ManagementMode: ManagementManaged,
+		SyncStatus:     SyncStatusPending,
+		ActionPending:  true,
+		LastError:      "internal",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{
+		"managementMode", "syncStatus", "actionPending", "lastError",
+	} {
+		if strings.Contains(string(encoded), field) {
+			t.Fatalf("internal field %q was serialized: %s", field, encoded)
 		}
 	}
 }

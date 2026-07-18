@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 
 	batchv1 "k8s.io/api/batch/v1"
@@ -21,13 +22,20 @@ import (
 	"github.com/AtulFalle/KubeQueue/apps/control-plane/internal/domain"
 )
 
-const jobIDLabel = "kubequeue.io/job-id"
+const (
+	jobIDLabel       = "kubequeue.io/job-id"
+	managedLabel     = "kubequeue.io/managed"
+	ignoreAnnotation = "kubequeue.io/ignore"
+	internalLabel    = "kubequeue.io/internal"
+	helmHook         = "helm.sh/hook"
+)
 
 type Client struct {
 	client  clientset.Interface
 	changes chan struct{}
 	mu      sync.RWMutex
 	listers map[string]batchlisters.JobLister
+	synced  map[string]bool
 }
 
 func InCluster() (*Client, error) {
@@ -46,11 +54,16 @@ func New(client clientset.Interface) *Client {
 	return &Client{
 		client: client, changes: make(chan struct{}, 1),
 		listers: make(map[string]batchlisters.JobLister),
+		synced:  make(map[string]bool),
 	}
 }
 
 func (c *Client) Start(ctx context.Context, namespaces []string) (<-chan struct{}, error) {
-	factories := make([]informers.SharedInformerFactory, 0, len(namespaces))
+	type namespaceInformer struct {
+		namespace string
+		factory   informers.SharedInformerFactory
+	}
+	factories := make([]namespaceInformer, 0, len(namespaces))
 	for _, namespace := range namespaces {
 		factory := informers.NewSharedInformerFactoryWithOptions(
 			c.client, 0, informers.WithNamespace(namespace),
@@ -69,29 +82,40 @@ func (c *Client) Start(ctx context.Context, namespaces []string) (<-chan struct{
 		}
 		c.mu.Lock()
 		c.listers[namespace] = jobs.Lister()
+		c.synced[namespace] = false
 		c.mu.Unlock()
-		factories = append(factories, factory)
+		factories = append(factories, namespaceInformer{namespace: namespace, factory: factory})
 	}
-	for _, factory := range factories {
-		factory.Start(ctx.Done())
+	for _, informer := range factories {
+		informer.factory.Start(ctx.Done())
 	}
-	for _, factory := range factories {
-		for resource, synced := range factory.WaitForCacheSync(ctx.Done()) {
-			if !synced {
-				return nil, fmt.Errorf("synchronize Kubernetes informer cache for %v", resource)
+	for _, informer := range factories {
+		go func() {
+			status := informer.factory.WaitForCacheSync(ctx.Done())
+			for _, ready := range status {
+				if !ready {
+					return
+				}
 			}
-		}
+			c.mu.Lock()
+			c.synced[informer.namespace] = true
+			c.mu.Unlock()
+			c.notify()
+		}()
 	}
-	c.notify()
 	return c.changes, nil
 }
 
 func (c *Client) ListJobs(_ context.Context, namespace string) ([]batchv1.Job, error) {
 	c.mu.RLock()
 	lister := c.listers[namespace]
+	synced := c.synced[namespace]
 	c.mu.RUnlock()
 	if lister == nil {
 		return nil, fmt.Errorf("job informer for namespace %s is not started", namespace)
+	}
+	if !synced {
+		return nil, fmt.Errorf("job informer for namespace %s is not synchronized", namespace)
 	}
 	items, err := lister.Jobs(namespace).List(labels.Everything())
 	if err != nil {
@@ -129,6 +153,7 @@ func (c *Client) CreateJob(
 		job.Labels = make(map[string]string)
 	}
 	job.Labels[jobIDLabel] = id
+	job.Labels[managedLabel] = "true"
 	suspended := true
 	job.Spec.Suspend = &suspended
 	job.Status = batchv1.JobStatus{}
@@ -140,8 +165,27 @@ func (c *Client) CreateJob(
 	return *created, nil
 }
 
-func (c *Client) Suspend(ctx context.Context, namespace, name string, suspended bool) error {
-	patch, err := json.Marshal(map[string]any{"spec": map[string]any{"suspend": suspended}})
+func (c *Client) Suspend(
+	ctx context.Context, namespace, name, expectedUID, expectedResourceVersion string, suspended bool,
+) error {
+	current, err := c.client.BatchV1().Jobs(namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	if expectedUID != "" && string(current.UID) != expectedUID {
+		return fmt.Errorf("job %s/%s UID changed", namespace, name)
+	}
+	if expectedResourceVersion != "" && current.ResourceVersion != expectedResourceVersion {
+		return fmt.Errorf("job %s/%s resource version changed", namespace, name)
+	}
+	metadata := map[string]any{}
+	if expectedResourceVersion != "" {
+		metadata["resourceVersion"] = expectedResourceVersion
+	}
+	patch, err := json.Marshal(map[string]any{
+		"metadata": metadata,
+		"spec":     map[string]any{"suspend": suspended},
+	})
 	if err != nil {
 		return err
 	}
@@ -151,16 +195,34 @@ func (c *Client) Suspend(ctx context.Context, namespace, name string, suspended 
 	return err
 }
 
-func (c *Client) DeleteJob(ctx context.Context, namespace, name string) error {
+func (c *Client) DeleteJob(
+	ctx context.Context, namespace, name, expectedUID, expectedResourceVersion string,
+) error {
 	policy := metav1.DeletePropagationForeground
+	preconditions := &metav1.Preconditions{}
+	if expectedUID != "" {
+		uid := types.UID(expectedUID)
+		preconditions.UID = &uid
+	}
+	if expectedResourceVersion != "" {
+		preconditions.ResourceVersion = &expectedResourceVersion
+	}
 	return c.client.BatchV1().Jobs(namespace).Delete(
-		ctx, name, metav1.DeleteOptions{PropagationPolicy: &policy},
+		ctx, name, metav1.DeleteOptions{
+			PropagationPolicy: &policy,
+			Preconditions:     preconditions,
+		},
 	)
 }
 
 func StateOf(job batchv1.Job) (domain.State, string) {
+	state, _, message := ObservationOf(job)
+	return state, message
+}
+
+func ObservationOf(job batchv1.Job) (domain.State, string, string) {
 	if job.Spec.Suspend != nil && *job.Spec.Suspend {
-		return domain.StatePaused, "Job is suspended"
+		return domain.StatePaused, "Suspended", "Job is suspended"
 	}
 	for _, condition := range job.Status.Conditions {
 		if condition.Status != "True" {
@@ -168,19 +230,19 @@ func StateOf(job batchv1.Job) (domain.State, string) {
 		}
 		switch condition.Type {
 		case batchv1.JobComplete:
-			return domain.StateCompleted, condition.Message
+			return domain.StateCompleted, condition.Reason, condition.Message
 		case batchv1.JobFailed, batchv1.JobFailureTarget:
-			return domain.StateFailed, condition.Message
+			return domain.StateFailed, condition.Reason, condition.Message
 		case batchv1.JobSuspended:
-			return domain.StatePaused, condition.Message
+			return domain.StatePaused, condition.Reason, condition.Message
 		case batchv1.JobSuccessCriteriaMet:
-			return domain.StateRunning, condition.Message
+			return domain.StateRunning, condition.Reason, condition.Message
 		}
 	}
 	if job.Status.Active > 0 {
-		return domain.StateRunning, "Job has active Pods"
+		return domain.StateRunning, "Active", "Job has active Pods"
 	}
-	return domain.StateQueued, "Job is waiting for execution"
+	return domain.StateQueued, "Waiting", "Job is waiting for execution"
 }
 
 func Template(job batchv1.Job) json.RawMessage {
@@ -210,6 +272,7 @@ func Template(job batchv1.Job) json.RawMessage {
 func removeControllerLabels(labels map[string]string) {
 	for _, key := range []string{
 		jobIDLabel,
+		managedLabel,
 		"batch.kubernetes.io/controller-uid",
 		"batch.kubernetes.io/job-name",
 		"controller-uid",
@@ -220,6 +283,22 @@ func removeControllerLabels(labels map[string]string) {
 }
 
 func JobID(job batchv1.Job) string { return job.Labels[jobIDLabel] }
+
+func ManagementModeOf(job batchv1.Job) domain.ManagementMode {
+	if IsIgnored(job) {
+		return domain.ManagementIgnored
+	}
+	if strings.EqualFold(strings.TrimSpace(job.Labels[managedLabel]), "true") {
+		return domain.ManagementManaged
+	}
+	return domain.ManagementObserved
+}
+
+func IsIgnored(job batchv1.Job) bool {
+	return strings.EqualFold(strings.TrimSpace(job.Annotations[ignoreAnnotation]), "true") ||
+		strings.TrimSpace(job.Annotations[helmHook]) != "" ||
+		strings.EqualFold(strings.TrimSpace(job.Labels[internalLabel]), "true")
+}
 
 func IsNotFound(err error) bool { return apierrors.IsNotFound(err) }
 

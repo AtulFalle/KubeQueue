@@ -29,6 +29,7 @@ func registerAPI(router *gin.Engine, jobs *application.Jobs, repository ports.Re
 	group.GET("/jobs", api.list)
 	group.POST("/jobs", api.create)
 	group.GET("/jobs/:id", api.get)
+	group.DELETE("/jobs/:id", api.archive)
 	group.GET("/jobs/:id/events", api.events)
 	group.POST("/jobs/:id/actions/:action", api.command)
 	group.PATCH("/jobs/:id/queue", api.updateQueue)
@@ -107,6 +108,21 @@ func (a *API) get(c *gin.Context) {
 	c.JSON(http.StatusOK, job)
 }
 
+func (a *API) archive(c *gin.Context) {
+	if !validateJobID(c) {
+		return
+	}
+	if err := a.jobs.Archive(c, c.Param("id")); err != nil {
+		if errors.Is(err, domain.ErrNotArchivable) {
+			writeError(c, http.StatusConflict, "JOB_NOT_ARCHIVABLE", err.Error())
+			return
+		}
+		writeRepositoryError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
 func (a *API) events(c *gin.Context) {
 	if !validateJobID(c) {
 		return
@@ -131,6 +147,10 @@ func (a *API) command(c *gin.Context) {
 	}
 	job, err := a.jobs.Command(c, c.Param("id"), c.Param("action"))
 	if err != nil {
+		if errors.Is(err, domain.ErrUnmanagedJob) {
+			writeError(c, http.StatusConflict, "JOB_NOT_MANAGED", err.Error())
+			return
+		}
 		if errors.Is(err, domain.ErrInvalidTransition) {
 			writeError(c, http.StatusConflict, "INVALID_TRANSITION", err.Error())
 			return
