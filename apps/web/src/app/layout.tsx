@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 
+import { SystemIndicator } from '../components/system-indicator';
 import './styles.css';
 
 export const metadata: Metadata = {
@@ -27,8 +28,9 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
             <Link href="/">Jobs</Link>
             <Link href="/queue">Queue</Link>
             <Link href="/jobs/new">Submit</Link>
+            <Link href="/settings">Settings</Link>
           </nav>
-          <span className="cluster-indicator">Live inventory</span>
+          <SystemIndicator />
         </header>
         <div id="main-content" tabIndex={-1}>
           {children}

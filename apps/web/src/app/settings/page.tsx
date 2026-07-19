@@ -1,20 +1,21 @@
 import { KubeQueueClient, type SystemStatus } from '@kubequeue/api-client';
 
-import { JobForm } from '../../../components/job-form';
+import { SettingsView } from '../../components/settings-view';
 
 export const dynamic = 'force-dynamic';
 
-export default async function NewJobPage() {
+export default async function SettingsPage() {
   const origin = process.env.KUBEQUEUE_API_INTERNAL_URL ?? 'http://localhost:8080';
   const client = new KubeQueueClient(
     `${origin}/api/v1`,
     process.env.KUBEQUEUE_ADMIN_TOKEN || undefined,
   );
-  let systemStatus: SystemStatus | undefined;
+  let status: SystemStatus | undefined;
+  let loadFailed = false;
   try {
-    systemStatus = await client.getSystemStatus();
+    status = await client.getSystemStatus();
   } catch {
-    // The form explains that submission is unavailable without a ready namespace.
+    loadFailed = true;
   }
-  return <JobForm systemStatus={systemStatus} />;
+  return <SettingsView status={status} loadFailed={loadFailed} />;
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { KubeQueueClient } from '@kubequeue/api-client';
+import { KubeQueueClient, type SystemStatus } from '@kubequeue/api-client';
 import { useRouter } from 'next/navigation';
 import { type FormEvent, useState } from 'react';
 
@@ -23,11 +23,16 @@ const initialTemplate = `{
   }
 }`;
 
-export function JobForm() {
+export function JobForm({ systemStatus }: { systemStatus?: SystemStatus }) {
   const router = useRouter();
   const [template, setTemplate] = useState(initialTemplate);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const readyNamespaces =
+    systemStatus?.watch.namespaces
+      .filter((namespace) => namespace.authorized && namespace.informerSynced)
+      .map((namespace) => namespace.namespace) ?? [];
+  const hasReadyNamespace = readyNamespaces.length > 0;
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -67,7 +72,17 @@ export function JobForm() {
           </label>
           <label>
             <span>Namespace</span>
-            <input name="namespace" required defaultValue="default" />
+            <select name="namespace" required disabled={!hasReadyNamespace}>
+              {hasReadyNamespace ? null : <option value="">No ready namespaces</option>}
+              {readyNamespaces.map((namespace) => (
+                <option key={namespace}>{namespace}</option>
+              ))}
+            </select>
+            <small>
+              {hasReadyNamespace
+                ? 'Submitted Jobs are managed by KubeQueue.'
+                : 'Submission is disabled until an authorized namespace is ready.'}
+            </small>
           </label>
           <label>
             <span>Team label</span>
@@ -104,7 +119,11 @@ export function JobForm() {
           <button className="button ghost" type="button" onClick={() => router.back()}>
             Cancel
           </button>
-          <button className="button primary" disabled={submitting} type="submit">
+          <button
+            className="button primary"
+            disabled={submitting || !hasReadyNamespace}
+            type="submit"
+          >
             {submitting ? 'Submitting…' : 'Add to queue'}
           </button>
         </div>

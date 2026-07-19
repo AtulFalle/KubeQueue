@@ -31,6 +31,53 @@ func TestCreateJobValidation(t *testing.T) {
 	}
 }
 
+func TestCreateJobRejectsExcludedAndReservedTemplates(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		metadata string
+	}{
+		{
+			name:     "explicit ignore",
+			metadata: `"annotations":{"kubequeue.io/ignore":"true"}`,
+		},
+		{
+			name:     "Helm hook",
+			metadata: `"annotations":{"helm.sh/hook":"pre-install"}`,
+		},
+		{
+			name:     "internal workload",
+			metadata: `"labels":{"kubequeue.io/internal":"true"}`,
+		},
+		{
+			name:     "durable ID spoof",
+			metadata: `"labels":{"kubequeue.io/job-id":"foreign"}`,
+		},
+		{
+			name:     "management marker spoof",
+			metadata: `"labels":{"kubequeue.io/managed":"true"}`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			input := CreateJob{
+				Name: "report", Namespace: "default",
+				Template: json.RawMessage(`{
+					"metadata":{` + test.metadata + `},
+					"spec":{"template":{"spec":{
+						"restartPolicy":"Never",
+						"containers":[{"name":"job","image":"busybox"}]
+					}}}
+				}`),
+			}
+			if err := input.Validate(); err == nil {
+				t.Fatal("excluded or reserved template was accepted")
+			}
+		})
+	}
+}
+
 func TestLifecycleTransitions(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -76,7 +123,7 @@ func TestSynchronizationStatus(t *testing.T) {
 	}
 }
 
-func TestReconciliationFieldsAreNotPublicJSON(t *testing.T) {
+func TestPublicSynchronizationFieldsAndInternalReconciliationFields(t *testing.T) {
 	t.Parallel()
 	encoded, err := json.Marshal(Job{
 		ManagementMode: ManagementManaged,
@@ -89,6 +136,13 @@ func TestReconciliationFieldsAreNotPublicJSON(t *testing.T) {
 	}
 	for _, field := range []string{
 		"managementMode", "syncStatus", "actionPending", "lastError",
+	} {
+		if !strings.Contains(string(encoded), field) {
+			t.Fatalf("public field %q was not serialized: %s", field, encoded)
+		}
+	}
+	for _, field := range []string{
+		"resourceVersion", "reconcileRetries", "nextReconcileAt",
 	} {
 		if strings.Contains(string(encoded), field) {
 			t.Fatalf("internal field %q was serialized: %s", field, encoded)

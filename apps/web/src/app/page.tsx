@@ -1,4 +1,10 @@
-import { KubeQueueClient, type Job, type JobFilters } from '@kubequeue/api-client';
+import {
+  KubeQueueClient,
+  type Job,
+  type JobFacets,
+  type JobFilters,
+  type SystemStatus,
+} from '@kubequeue/api-client';
 
 import { Dashboard } from '../components/dashboard';
 
@@ -24,11 +30,24 @@ export default async function HomePage({ searchParams }: HomePageProps) {
   );
   let initialJobs: Job[] = [];
   let initialQueueVersion = 0;
+  let initialFacets: JobFacets = {
+    total: 0,
+    observedStateCounts: {},
+    namespaces: [],
+    teams: [],
+  };
+  let initialSystemStatus: SystemStatus | undefined;
   let initialLoadFailed = false;
   try {
-    const response = await client.listJobs(filters);
+    const [response, facets, systemStatus] = await Promise.all([
+      client.listJobs(filters),
+      client.getJobFacets(),
+      client.getSystemStatus(),
+    ]);
     initialJobs = response.items;
     initialQueueVersion = response.queueVersion;
+    initialFacets = facets;
+    initialSystemStatus = systemStatus;
   } catch {
     initialLoadFailed = true;
   }
@@ -36,6 +55,8 @@ export default async function HomePage({ searchParams }: HomePageProps) {
     <Dashboard
       initialJobs={initialJobs}
       initialQueueVersion={initialQueueVersion}
+      initialFacets={initialFacets}
+      initialSystemStatus={initialSystemStatus}
       initialLoadFailed={initialLoadFailed}
     />
   );

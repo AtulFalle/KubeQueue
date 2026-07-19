@@ -5,8 +5,21 @@ serviceAccount:
   create: true
   name: ''
 
+rbac:
+  create: true
+  allowClusterWide: false
+
+imagePullSecrets: []
+
+watch:
+  mode: selected
+  namespaces: []
+  excludedNamespaces:
+    - kube-system
+    - kube-public
+    - kube-node-lease
+
 config:
-  watchNamespaces: ''
   globalConcurrency: 10
   namespaceConcurrency: 5
   adminToken: ''

@@ -19,22 +19,35 @@ import (
 
 type API struct {
 	jobs       *application.Jobs
+	system     *application.System
 	repository ports.Repository
 }
 
 func registerAPI(router *gin.Engine, jobs *application.Jobs, repository ports.Repository, token string) {
-	api := &API{jobs: jobs, repository: repository}
+	api := &API{jobs: jobs, system: application.NewSystem(repository), repository: repository}
 	group := router.Group("/api/v1")
 	group.Use(adminToken(token))
+	group.GET("/system/status", api.systemStatus)
 	group.GET("/jobs", api.list)
 	group.POST("/jobs", api.create)
+	group.GET("/jobs/facets", api.facets)
 	group.GET("/jobs/:id", api.get)
 	group.DELETE("/jobs/:id", api.archive)
 	group.GET("/jobs/:id/events", api.events)
 	group.POST("/jobs/:id/actions/:action", api.command)
 	group.PATCH("/jobs/:id/queue", api.updateQueue)
+	group.GET("/queue", api.queue)
 	group.PUT("/queue/order", api.reorder)
 	group.GET("/events", api.stream)
+}
+
+func (a *API) systemStatus(c *gin.Context) {
+	status, err := a.system.Status(c)
+	if err != nil {
+		writeError(c, http.StatusServiceUnavailable, "SYSTEM_STATUS_UNAVAILABLE", err.Error())
+		return
+	}
+	c.JSON(http.StatusOK, status)
 }
 
 type createRequest struct {
@@ -57,6 +70,14 @@ func (a *API) create(c *gin.Context) {
 		Priority: request.Priority, ScheduledFor: request.ScheduledFor, Template: request.Template,
 	})
 	if err != nil {
+		if errors.Is(err, domain.ErrNamespaceOutOfScope) {
+			writeError(c, http.StatusUnprocessableEntity, "NAMESPACE_OUT_OF_SCOPE", err.Error())
+			return
+		}
+		if errors.Is(err, domain.ErrNamespaceUnavailable) {
+			writeError(c, http.StatusServiceUnavailable, "NAMESPACE_UNAVAILABLE", err.Error())
+			return
+		}
 		writeError(c, http.StatusUnprocessableEntity, "INVALID_JOB", err.Error())
 		return
 	}
@@ -93,6 +114,26 @@ func (a *API) list(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"items": jobs, "count": len(jobs), "queueVersion": queueVersion,
+	})
+}
+
+func (a *API) facets(c *gin.Context) {
+	facets, err := a.jobs.Facets(c)
+	if err != nil {
+		writeRepositoryError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, facets)
+}
+
+func (a *API) queue(c *gin.Context) {
+	jobs, version, err := a.jobs.Queue(c)
+	if err != nil {
+		writeRepositoryError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"items": jobs, "count": len(jobs), "queueVersion": version,
 	})
 }
 
@@ -147,6 +188,10 @@ func (a *API) command(c *gin.Context) {
 	}
 	job, err := a.jobs.Command(c, c.Param("id"), c.Param("action"))
 	if err != nil {
+		if errors.Is(err, domain.ErrNamespaceOutOfScope) {
+			writeError(c, http.StatusConflict, "NAMESPACE_OUT_OF_SCOPE", err.Error())
+			return
+		}
 		if errors.Is(err, domain.ErrUnmanagedJob) {
 			writeError(c, http.StatusConflict, "JOB_NOT_MANAGED", err.Error())
 			return
@@ -177,11 +222,19 @@ func (a *API) updateQueue(c *gin.Context) {
 		writeError(c, http.StatusBadRequest, "INVALID_REQUEST", err.Error())
 		return
 	}
-	job, err := a.repository.UpdateQueue(
+	job, err := a.jobs.UpdateQueue(
 		c, c.Param("id"), request.Priority, request.Position, request.Version,
 		request.ScheduledFor,
 	)
 	if err != nil {
+		if errors.Is(err, domain.ErrNamespaceOutOfScope) {
+			writeError(c, http.StatusConflict, "NAMESPACE_OUT_OF_SCOPE", err.Error())
+			return
+		}
+		if errors.Is(err, domain.ErrUnmanagedJob) {
+			writeError(c, http.StatusConflict, "JOB_NOT_MANAGED", err.Error())
+			return
+		}
 		writeRepositoryError(c, err)
 		return
 	}
@@ -207,8 +260,24 @@ func (a *API) reorder(c *gin.Context) {
 		writeError(c, http.StatusBadRequest, "INVALID_REQUEST", err.Error())
 		return
 	}
-	version, err := a.repository.Reorder(c, request.JobIDs, request.Version)
+	seen := make(map[string]struct{}, len(request.JobIDs))
+	for _, id := range request.JobIDs {
+		if uuid.Validate(id) != nil {
+			writeError(c, http.StatusBadRequest, "INVALID_JOB_ID", "every job id must be a UUID")
+			return
+		}
+		if _, duplicate := seen[id]; duplicate {
+			writeError(c, http.StatusBadRequest, "INVALID_REQUEST", "jobIds must be unique")
+			return
+		}
+		seen[id] = struct{}{}
+	}
+	version, err := a.jobs.Reorder(c, request.JobIDs, request.Version)
 	if err != nil {
+		if errors.Is(err, domain.ErrNamespaceOutOfScope) {
+			writeError(c, http.StatusConflict, "NAMESPACE_OUT_OF_SCOPE", err.Error())
+			return
+		}
 		writeRepositoryError(c, err)
 		return
 	}
@@ -223,7 +292,7 @@ func (a *API) stream(c *gin.Context) {
 
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
-	lastVersion := int64(-1)
+	lastPayload := ""
 	for {
 		jobs, err := a.repository.List(c, ports.JobFilter{})
 		if err != nil {
@@ -233,11 +302,11 @@ func (a *API) stream(c *gin.Context) {
 		for _, job := range jobs {
 			version += job.Version
 		}
-		if version != lastVersion {
-			payload, _ := json.Marshal(gin.H{"type": "snapshot", "items": jobs, "version": version})
+		payload, _ := json.Marshal(gin.H{"type": "snapshot", "items": jobs, "version": version})
+		if string(payload) != lastPayload {
 			_, _ = fmt.Fprintf(c.Writer, "id: %d\nevent: jobs\ndata: %s\n\n", version, payload)
 			c.Writer.Flush()
-			lastVersion = version
+			lastPayload = string(payload)
 		}
 		select {
 		case <-c.Request.Context().Done():

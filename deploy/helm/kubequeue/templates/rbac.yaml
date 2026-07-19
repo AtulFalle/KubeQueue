@@ -1,13 +1,17 @@
-{{- if .Values.serviceAccount.create }}
+{{- if .Values.rbac.create }}
+{{- if eq .Values.watch.mode "selected" }}
 {{- $root := . }}
-{{- $watchNamespaces := splitList "," (default .Release.Namespace .Values.config.watchNamespaces) }}
+{{- $watchNamespaces := .Values.watch.namespaces }}
+{{- if eq (len $watchNamespaces) 0 }}
+{{- $watchNamespaces = list .Release.Namespace }}
+{{- end }}
 {{- range $watchNamespace := $watchNamespaces }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: {{ include "kubequeue.fullname" $root }}-worker
-  namespace: {{ trim $watchNamespace }}
+  namespace: {{ $watchNamespace }}
   labels:
     {{- include "kubequeue.labels" $root | nindent 4 }}
 rules:
@@ -22,7 +26,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: {{ include "kubequeue.fullname" $root }}-worker
-  namespace: {{ trim $watchNamespace }}
+  namespace: {{ $watchNamespace }}
   labels:
     {{- include "kubequeue.labels" $root | nindent 4 }}
 subjects:
@@ -33,5 +37,41 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
   name: {{ include "kubequeue.fullname" $root }}-worker
+{{- end }}
+{{- else }}
+{{- if not .Values.rbac.allowClusterWide }}
+{{- fail "rbac.allowClusterWide must be true when watch.mode is all" }}
+{{- end }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "kubequeue.clusterResourceName" . }}
+  labels:
+    {{- include "kubequeue.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "list", "watch", "create", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "kubequeue.clusterResourceName" . }}
+  labels:
+    {{- include "kubequeue.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "kubequeue.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "kubequeue.clusterResourceName" . }}
 {{- end }}
 {{- end }}

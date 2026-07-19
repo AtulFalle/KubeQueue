@@ -12,6 +12,19 @@ servers:
 security:
   - bearerAuth: []
 paths:
+  /system/status:
+    get:
+      summary: Get control-plane status
+      description: Returns API, database, worker, namespace authority, and effective runtime status.
+      operationId: getSystemStatus
+      responses:
+        '200':
+          description: Current control-plane status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SystemStatus' }
+        '401': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
   /jobs:
     get:
       summary: List jobs
@@ -51,6 +64,18 @@ paths:
         '400': { $ref: '#/components/responses/Error' }
         '401': { $ref: '#/components/responses/Error' }
         '422': { $ref: '#/components/responses/Error' }
+  /jobs/facets:
+    get:
+      summary: Get job inventory facets
+      description: Returns global inventory counts and filter values independently from active filters.
+      operationId: getJobFacets
+      responses:
+        '200':
+          description: Global job inventory facets
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/JobFacets' }
+        '401': { $ref: '#/components/responses/Error' }
   /jobs/{jobId}:
     parameters:
       - { $ref: '#/components/parameters/JobId' }
@@ -154,7 +179,7 @@ paths:
   /queue/order:
     put:
       summary: Reorder queued jobs
-      description: Replaces queue positions when the supplied queue version is current.
+      description: Replaces positions within priority tiers when the supplied queue version is current and jobIds is the exact complete queue set.
       operationId: reorderQueue
       requestBody:
         required: true
@@ -167,6 +192,7 @@ paths:
                 jobIds:
                   type: array
                   minItems: 1
+                  uniqueItems: true
                   items: { type: string, format: uuid }
                 version: { type: integer, minimum: 0 }
       responses:
@@ -182,6 +208,18 @@ paths:
         '400': { $ref: '#/components/responses/Error' }
         '401': { $ref: '#/components/responses/Error' }
         '409': { $ref: '#/components/responses/Error' }
+  /queue:
+    get:
+      summary: Get the complete queue
+      description: Returns every managed Job waiting for scheduling in authoritative queue order.
+      operationId: getQueue
+      responses:
+        '200':
+          description: Complete queue
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/JobList' }
+        '401': { $ref: '#/components/responses/Error' }
   /events:
     get:
       summary: Stream job changes
@@ -228,9 +266,78 @@ components:
         application/json:
           schema: { $ref: '#/components/schemas/ErrorResponse' }
   schemas:
+    WorkerState:
+      type: string
+      enum: [ready, degraded, unavailable]
+    NamespaceAuthorityStatus:
+      type: object
+      required: [namespace, informerSynced, authorized]
+      properties:
+        namespace: { type: string }
+        informerSynced: { type: boolean }
+        authorized: { type: boolean }
+        message: { type: string }
+        observedAt: { type: string, format: date-time }
+    SystemStatus:
+      type: object
+      required: [api, database, worker, watch, concurrency, releaseVersion, activeErrors]
+      properties:
+        api:
+          type: object
+          required: [ready]
+          properties:
+            ready: { type: boolean }
+        database:
+          type: object
+          required: [ready]
+          properties:
+            ready: { type: boolean }
+        worker:
+          type: object
+          required: [state]
+          properties:
+            state: { $ref: '#/components/schemas/WorkerState' }
+            heartbeatAt: { type: string, format: date-time }
+            lastSuccessfulReconciliationAt: { type: string, format: date-time }
+        watch:
+          type: object
+          required: [mode, effectiveNamespaces, excludedNamespaces, namespaces]
+          properties:
+            mode: { type: string, enum: [selected, all] }
+            effectiveNamespaces:
+              type: array
+              items: { type: string }
+            excludedNamespaces:
+              type: array
+              items: { type: string }
+            namespaces:
+              type: array
+              items: { $ref: '#/components/schemas/NamespaceAuthorityStatus' }
+        concurrency:
+          type: object
+          required: [global, perNamespace]
+          properties:
+            global: { type: integer, minimum: 1 }
+            perNamespace: { type: integer, minimum: 1 }
+        releaseVersion: { type: string }
+        activeErrors:
+          type: array
+          items:
+            type: object
+            required: [scope, code, message]
+            properties:
+              scope: { type: string }
+              code: { type: string }
+              message: { type: string }
     JobState:
       type: string
       enum: [CREATED, QUEUED, RUNNING, PAUSED, COMPLETED, FAILED, CANCELLED]
+    ManagementMode:
+      type: string
+      enum: [MANAGED, OBSERVED, IGNORED, CONFLICTED]
+    SynchronizationStatus:
+      type: string
+      enum: [SYNCED, PENDING, MISSING, STALE, ERROR, OUT_OF_SCOPE, CONFLICTED]
     Job:
       type: object
       required:
@@ -242,6 +349,9 @@ components:
           position,
           desiredState,
           observedState,
+          managementMode,
+          syncStatus,
+          actionPending,
           template,
           attempt,
           version,
@@ -258,6 +368,15 @@ components:
         position: { type: integer }
         desiredState: { $ref: '#/components/schemas/JobState' }
         observedState: { $ref: '#/components/schemas/JobState' }
+        managementMode: { $ref: '#/components/schemas/ManagementMode' }
+        syncStatus: { $ref: '#/components/schemas/SynchronizationStatus' }
+        actionPending: { type: boolean }
+        observedReason: { type: string }
+        observedMessage: { type: string }
+        observedAt: { type: string, format: date-time }
+        lastError: { type: string }
+        lastErrorCode: { type: string }
+        errorRemediation: { type: string }
         scheduledFor: { type: string, format: date-time }
         kubernetesUid: { type: string }
         template: { type: object, additionalProperties: true }
@@ -274,6 +393,22 @@ components:
           items: { $ref: '#/components/schemas/Job' }
         count: { type: integer }
         queueVersion: { type: integer, minimum: 0 }
+    JobFacets:
+      type: object
+      required: [total, observedStateCounts, namespaces, teams]
+      properties:
+        total: { type: integer, minimum: 0 }
+        observedStateCounts:
+          type: object
+          additionalProperties:
+            type: integer
+            minimum: 0
+        namespaces:
+          type: array
+          items: { type: string }
+        teams:
+          type: array
+          items: { type: string }
     CreateJob:
       type: object
       required: [name, namespace, template]

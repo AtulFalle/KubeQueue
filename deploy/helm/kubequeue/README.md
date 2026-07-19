@@ -37,6 +37,7 @@ Install the published chart:
 helm install kubequeue oci://ghcr.io/atulfalle/charts/kubequeue \
   --version <release-version> \
   --namespace kubequeue \
+  --set 'watch.namespaces={default,batch-jobs}' \
   --set-string database.existingSecret=kubequeue-database \
   --set-string config.adminTokenExistingSecret=kubequeue-admin
 ```
@@ -55,22 +56,42 @@ proxying API requests, so anyone who can reach the dashboard has administrative 
 
 ## Configuration
 
-| Value                                | Purpose                                                                            | Default        |
-| ------------------------------------ | ---------------------------------------------------------------------------------- | -------------- |
-| `config.watchNamespaces`             | Comma-separated namespaces watched by the worker; empty uses the release namespace | `""`           |
-| `config.globalConcurrency`           | Maximum globally admitted Jobs                                                     | `10`           |
-| `config.namespaceConcurrency`        | Maximum admitted Jobs per namespace                                                | `5`            |
-| `config.adminToken`                  | Inline administrator token; existing Secret is preferred                           | `""`           |
-| `config.adminTokenExistingSecret`    | Secret containing the administrator token                                          | `""`           |
-| `config.adminTokenExistingSecretKey` | Administrator-token key                                                            | `admin-token`  |
-| `database.url`                       | Inline PostgreSQL URL; existing Secret is preferred                                | `""`           |
-| `database.existingSecret`            | Secret containing the PostgreSQL URL                                               | `""`           |
-| `database.existingSecretKey`         | PostgreSQL URL key                                                                 | `database-url` |
-| `networkPolicy.enabled`              | Restrict ingress to same-release pods                                              | `false`        |
+| Value                                | Purpose                                                                     | Default           |
+| ------------------------------------ | --------------------------------------------------------------------------- | ----------------- |
+| `watch.mode`                         | `selected` for namespace Roles or `all` for explicit cluster-wide authority | `selected`        |
+| `watch.namespaces`                   | Namespaces managed in selected mode; empty uses the release namespace       | `[]`              |
+| `watch.excludedNamespaces`           | Namespaces excluded defensively in all mode                                 | System namespaces |
+| `rbac.create`                        | Create worker RBAC independently from the ServiceAccount                    | `true`            |
+| `rbac.allowClusterWide`              | Explicit consent required when `watch.mode=all`                             | `false`           |
+| `imagePullSecrets`                   | Image pull Secret references applied to every workload                      | `[]`              |
+| `config.globalConcurrency`           | Maximum globally admitted Jobs                                              | `10`              |
+| `config.namespaceConcurrency`        | Maximum admitted Jobs per namespace                                         | `5`               |
+| `config.adminToken`                  | Inline administrator token; existing Secret is preferred                    | `""`              |
+| `config.adminTokenExistingSecret`    | Secret containing the administrator token                                   | `""`              |
+| `config.adminTokenExistingSecretKey` | Administrator-token key                                                     | `admin-token`     |
+| `database.url`                       | Inline PostgreSQL URL; existing Secret is preferred                         | `""`              |
+| `database.existingSecret`            | Secret containing the PostgreSQL URL                                        | `""`              |
+| `database.existingSecretKey`         | PostgreSQL URL key                                                          | `database-url`    |
+| `networkPolicy.enabled`              | Restrict ingress to same-release pods                                       | `false`           |
 
 Image repositories default to KubeQueue GHCR packages. Empty image-tag values resolve to the
 packaged chart's `appVersion`, so all workloads use the matching release by default. Override
 individual tags only when testing a custom build.
+
+Cluster-wide discovery requires explicit consent:
+
+```bash
+helm upgrade --install kubequeue oci://ghcr.io/atulfalle/charts/kubequeue \
+  --version <release-version> \
+  --namespace kubequeue \
+  --set-string watch.mode=all \
+  --set rbac.allowClusterWide=true \
+  --set-string database.existingSecret=kubequeue-database \
+  --set-string config.adminTokenExistingSecret=kubequeue-admin
+```
+
+Cluster-wide mode grants the worker cluster-scoped Job mutation authority. KubeQueue always excludes
+the release namespace and the Kubernetes system namespaces even if they are omitted from values.
 
 ## Upgrade and rollback
 

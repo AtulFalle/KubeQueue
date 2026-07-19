@@ -8,7 +8,9 @@ import (
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes/fake"
 
 	"github.com/AtulFalle/KubeQueue/apps/control-plane/internal/domain"
@@ -101,6 +103,16 @@ func TestIgnoredWorkloadClassification(t *testing.T) {
 	}
 }
 
+func TestClassifyErrorReturnsStableCodeAndRemediation(t *testing.T) {
+	t.Parallel()
+	code, remediation := ClassifyError(apierrors.NewForbidden(
+		schema.GroupResource{Group: "batch", Resource: "jobs"}, "report", nil,
+	))
+	if code != "KUBERNETES_AUTHORIZATION_FAILED" || remediation == "" {
+		t.Fatalf("ClassifyError() = %q, %q", code, remediation)
+	}
+}
+
 func TestInformerPublishesChangesAndListsCachedJobs(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -130,6 +142,20 @@ func TestInformerPublishesChangesAndListsCachedJobs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	_, err = clientset.BatchV1().Jobs("default").Create(ctx, &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "ignored", Namespace: "default",
+			Annotations: map[string]string{ignoreAnnotation: "true"},
+		},
+		Spec: batchv1.JobSpec{
+			Template: corev1.PodTemplateSpec{Spec: corev1.PodSpec{
+				RestartPolicy: corev1.RestartPolicyNever,
+			}},
+		},
+	}, metav1.CreateOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	select {
 	case <-changes:
 	case <-time.After(time.Second):
@@ -141,6 +167,41 @@ func TestInformerPublishesChangesAndListsCachedJobs(t *testing.T) {
 	}
 	if len(jobs) != 1 || jobs[0].Name != "existing" {
 		t.Fatalf("ListJobs() = %#v", jobs)
+	}
+}
+
+func TestClusterInformerListsJobsAcrossNamespaces(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	clientset := fake.NewClientset(
+		&batchv1.Job{ObjectMeta: metav1.ObjectMeta{Name: "first", Namespace: "one"}},
+		&batchv1.Job{ObjectMeta: metav1.ObjectMeta{Name: "second", Namespace: "two"}},
+	)
+	client := New(clientset)
+	changes, err := client.Start(ctx, []string{metav1.NamespaceAll})
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-changes:
+	case <-time.After(time.Second):
+		t.Fatal("cluster informer cache did not synchronize")
+	}
+	var jobs []batchv1.Job
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		jobs, err = client.ListJobs(ctx, metav1.NamespaceAll)
+		if err == nil {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(jobs) != 2 {
+		t.Fatalf("ListJobs(all) returned %d Jobs", len(jobs))
 	}
 }
 

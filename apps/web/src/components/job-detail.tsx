@@ -5,7 +5,8 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 
-import { Status } from './dashboard';
+import { Badge, Status } from './dashboard';
+import { LifecycleActions, pendingLifecycleLabel } from './lifecycle-actions';
 
 const client = new KubeQueueClient();
 
@@ -48,23 +49,12 @@ export function JobDetail({
     return () => events.close();
   }, [refresh]);
 
-  async function command(action: JobAction) {
-    if (
-      ['pause', 'terminate', 'retry'].includes(action) &&
-      !window.confirm(`${action[0]?.toUpperCase()}${action.slice(1)} ${job?.name ?? 'this job'}?`)
-    ) {
+  function applyCommand(updated: Job, action: JobAction) {
+    if (action === 'retry' && updated.id !== id) {
+      router.push(`/jobs/${updated.id}`);
       return;
     }
-    try {
-      const updated = await client.command(id, action);
-      if (action === 'retry' && updated.id !== id) {
-        router.push(`/jobs/${updated.id}`);
-        return;
-      }
-      await refresh();
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Action failed');
-    }
+    setJob(updated);
   }
 
   if (!job) {
@@ -86,30 +76,13 @@ export function JobDetail({
             {job.namespace} / attempt {job.attempt}
           </p>
           <h1>{job.name}</h1>
-          <Status state={job.observedState} />
+          <div className="badge-stack">
+            <Status state={job.observedState} label={pendingLifecycleLabel(job)} />
+            <Badge value={job.managementMode} />
+            <Badge value={job.syncStatus} />
+          </div>
         </div>
-        <div className="action-bar">
-          {job.observedState === 'PAUSED' ? (
-            <button className="button primary" onClick={() => void command('resume')}>
-              Resume
-            </button>
-          ) : null}
-          {job.observedState === 'RUNNING' || job.desiredState === 'QUEUED' ? (
-            <button className="button ghost" onClick={() => void command('pause')}>
-              Pause
-            </button>
-          ) : null}
-          {job.observedState === 'FAILED' || job.desiredState === 'CANCELLED' ? (
-            <button className="button ghost" onClick={() => void command('retry')}>
-              Retry
-            </button>
-          ) : null}
-          {!['COMPLETED', 'CANCELLED'].includes(job.observedState) ? (
-            <button className="button danger-button" onClick={() => void command('terminate')}>
-              Terminate
-            </button>
-          ) : null}
-        </div>
+        <LifecycleActions job={job} onUpdated={applyCommand} onError={setError} />
       </section>
       {error ? (
         <div className="alert" role="alert">
@@ -139,9 +112,7 @@ export function JobDetail({
             </div>
             <div>
               <dt>Scheduled</dt>
-              <dd>
-                {job.scheduledFor ? formatTimestamp(job.scheduledFor) : 'Immediately'}
-              </dd>
+              <dd>{job.scheduledFor ? formatTimestamp(job.scheduledFor) : 'Immediately'}</dd>
             </div>
             <div>
               <dt>Kubernetes UID</dt>

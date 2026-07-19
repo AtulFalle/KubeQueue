@@ -13,6 +13,7 @@ import (
 
 	"github.com/AtulFalle/KubeQueue/apps/control-plane/internal/adapters/persistence"
 	"github.com/AtulFalle/KubeQueue/apps/control-plane/internal/application"
+	"github.com/AtulFalle/KubeQueue/apps/control-plane/internal/platform/config"
 	"github.com/gin-gonic/gin"
 )
 
@@ -27,6 +28,10 @@ func Run(ctx context.Context) error {
 	defer func() { _ = store.Close() }()
 	if os.Getenv("KUBEQUEUE_MIGRATE_ONLY") == "true" {
 		return nil
+	}
+	namespaceScope, err := config.NamespaceScopeFromEnvironment()
+	if err != nil {
+		return err
 	}
 
 	router := gin.New()
@@ -45,7 +50,12 @@ func Run(ctx context.Context) error {
 		}
 		c.Status(http.StatusNoContent)
 	})
-	registerAPI(router, application.NewJobs(store), store, os.Getenv("KUBEQUEUE_ADMIN_TOKEN"))
+	registerAPI(
+		router,
+		application.NewJobs(store, namespaceScope),
+		store,
+		os.Getenv("KUBEQUEUE_ADMIN_TOKEN"),
+	)
 
 	server := &http.Server{
 		Addr:              address(),

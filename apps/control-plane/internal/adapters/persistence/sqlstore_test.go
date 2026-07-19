@@ -55,6 +55,180 @@ func TestStoreCreateListAndLifecycle(t *testing.T) {
 	}
 }
 
+func TestStoreFacetsAggregateActiveInventory(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store, err := Open(ctx, "file:test-facets?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	for _, input := range []domain.CreateJob{
+		{Name: "alpha", Namespace: "batch", Team: "data", Template: validJobTemplate},
+		{Name: "beta", Namespace: "default", Team: "platform", Template: validJobTemplate},
+	} {
+		if _, err := store.Create(ctx, input); err != nil {
+			t.Fatal(err)
+		}
+	}
+	observed, err := store.Adopt(ctx, domain.Job{
+		Name: "external", Namespace: "batch", Team: "platform",
+		DesiredState: domain.StateRunning, ObservedState: domain.StateRunning,
+		ManagementMode: domain.ManagementObserved, SyncStatus: domain.SyncStatusSynced,
+		KubernetesUID: "facets-external", Template: validJobTemplate,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if observed.ID == "" {
+		t.Fatal("Adopt() returned an empty id")
+	}
+	archived, err := store.Create(ctx, domain.CreateJob{
+		Name: "archived", Namespace: "hidden", Team: "hidden", Template: validJobTemplate,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Archive(ctx, archived.ID, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+
+	facets, err := store.Facets(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if facets.Total != 3 ||
+		facets.ObservedStateCounts[string(domain.StateCreated)] != 2 ||
+		facets.ObservedStateCounts[string(domain.StateRunning)] != 1 {
+		t.Fatalf("Facets() counts = %#v", facets)
+	}
+	if len(facets.Namespaces) != 2 || facets.Namespaces[0] != "batch" ||
+		facets.Namespaces[1] != "default" {
+		t.Fatalf("Facets() namespaces = %#v", facets.Namespaces)
+	}
+	if len(facets.Teams) != 2 || facets.Teams[0] != "data" ||
+		facets.Teams[1] != "platform" {
+		t.Fatalf("Facets() teams = %#v", facets.Teams)
+	}
+}
+
+func TestStoreQueueReturnsOnlyManagedQueuedJobsAndVersion(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store, err := Open(ctx, "file:test-complete-queue?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	low, err := store.Create(ctx, domain.CreateJob{
+		Name: "low", Namespace: "default", Priority: 1, Template: validJobTemplate,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	high, err := store.Create(ctx, domain.CreateJob{
+		Name: "high", Namespace: "default", Priority: 10, Template: validJobTemplate,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	paused, err := store.Create(ctx, domain.CreateJob{
+		Name: "paused", Namespace: "default", Priority: 20, Template: validJobTemplate,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.SetDesiredState(ctx, paused.ID, domain.StatePaused); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Adopt(ctx, domain.Job{
+		Name: "observed", Namespace: "default", Priority: 30,
+		DesiredState: domain.StateQueued, ObservedState: domain.StateCreated,
+		ManagementMode: domain.ManagementObserved, SyncStatus: domain.SyncStatusSynced,
+		KubernetesUID: "queue-observed", Template: validJobTemplate,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	archived, err := store.Create(ctx, domain.CreateJob{
+		Name: "archived", Namespace: "default", Priority: 40, Template: validJobTemplate,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Archive(ctx, archived.ID, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+
+	wantVersion, err := store.QueueVersion(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	queue, version, err := store.Queue(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if version != wantVersion {
+		t.Fatalf("Queue() version = %d, want %d", version, wantVersion)
+	}
+	if len(queue) != 2 || queue[0].ID != high.ID || queue[1].ID != low.ID {
+		t.Fatalf("Queue() = %#v", queue)
+	}
+	for _, job := range queue {
+		if job.ManagementMode != domain.ManagementManaged ||
+			job.DesiredState != domain.StateQueued || job.ArchivedAt != nil {
+			t.Fatalf("Queue() included ineligible Job %#v", job)
+		}
+	}
+}
+
+func TestIgnoredWorkloadRepairArchivesExistingRecord(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store, err := Open(ctx, "file:test-ignored-repair?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	job, err := store.Create(ctx, domain.CreateJob{
+		Name: "migration", Namespace: "default", Template: validJobTemplate,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ignoredTemplate := `{
+		"metadata":{"annotations":{"helm.sh/hook":"pre-upgrade"}},
+		"spec":{"template":{"spec":{
+			"restartPolicy":"Never",
+			"containers":[{"name":"migration","image":"example"}]
+		}}}
+	}`
+	if _, err := store.db.ExecContext(
+		ctx, store.bind(`UPDATE jobs SET template=? WHERE id=?`), ignoredTemplate, job.ID,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.db.ExecContext(ctx, store.archiveIgnoredJobsStatement()); err != nil {
+		t.Fatal(err)
+	}
+
+	jobs, err := store.List(ctx, ports.JobFilter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(jobs) != 0 {
+		t.Fatalf("List() returned repaired ignored Job: %#v", jobs)
+	}
+	repaired, err := store.Get(ctx, job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if repaired.ManagementMode != domain.ManagementIgnored || repaired.ArchivedAt == nil {
+		t.Fatalf("repaired Job = %#v", repaired)
+	}
+}
+
 func TestStoreRejectsStaleObservationCompareAndSet(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -120,6 +294,77 @@ func TestStoreMarksMissingWithoutCancelling(t *testing.T) {
 	}
 }
 
+func TestStoreMarksOutOfScopeAndRejectsQueueMutation(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store, err := Open(ctx, "file:test-out-of-scope?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	job, err := store.Create(ctx, domain.CreateJob{
+		Name: "job", Namespace: "removed", Template: validJobTemplate,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, err = store.MarkOutOfScope(ctx, job.ID, job.ResourceVersion, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job.SyncStatus != domain.SyncStatusOutOfScope {
+		t.Fatalf("sync status = %s", job.SyncStatus)
+	}
+	if _, err := store.UpdateQueue(
+		ctx, job.ID, job.Priority, job.Position, job.Version, job.ScheduledFor,
+	); !errors.Is(err, ports.ErrConflict) {
+		t.Fatalf("UpdateQueue() error = %v, want conflict", err)
+	}
+}
+
+func TestStorePersistsWorkerStatusAndLastSuccess(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store, err := Open(ctx, "file:test-worker-status?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	status := domain.WorkerStatus{
+		State:                          domain.WorkerStateReady,
+		HeartbeatAt:                    &now,
+		LastSuccessfulReconciliationAt: &now,
+		WatchMode:                      domain.WatchModeSelected,
+		EffectiveNamespaces:            []string{"batch", "default"},
+		Namespaces: []domain.NamespaceAuthorityStatus{{
+			Namespace: "batch", InformerSynced: true, Authorized: true, ObservedAt: &now,
+		}},
+		GlobalConcurrency: 10, NamespaceConcurrency: 5, ReleaseVersion: "test",
+	}
+	if err := store.UpdateWorkerStatus(ctx, status); err != nil {
+		t.Fatal(err)
+	}
+	later := now.Add(time.Second)
+	status.State = domain.WorkerStateDegraded
+	status.HeartbeatAt = &later
+	status.LastSuccessfulReconciliationAt = nil
+	status.ActiveError = "authorization failed"
+	if err := store.UpdateWorkerStatus(ctx, status); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := store.WorkerStatus(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.State != domain.WorkerStateDegraded || stored.HeartbeatAt == nil ||
+		!stored.HeartbeatAt.Equal(later) || stored.LastSuccessfulReconciliationAt == nil ||
+		!stored.LastSuccessfulReconciliationAt.Equal(now) ||
+		len(stored.Namespaces) != 1 || stored.ActiveError != "authorization failed" {
+		t.Fatalf("WorkerStatus() = %#v", stored)
+	}
+}
+
 func TestStoreRejectsStaleQueueUpdate(t *testing.T) {
 	t.Parallel()
 	store, err := Open(context.Background(), "file:test-conflict?mode=memory&cache=shared")
@@ -163,6 +408,42 @@ func TestStoreReorderRejectsUnknownJobs(t *testing.T) {
 	}
 }
 
+func TestStoreReorderRejectsIncompleteAndDuplicateQueue(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store, err := Open(ctx, "file:test-reorder-complete?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	first, err := store.Create(ctx, domain.CreateJob{
+		Name: "first", Namespace: "default", Priority: 10, Template: validJobTemplate,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := store.Create(ctx, domain.CreateJob{
+		Name: "second", Namespace: "default", Template: validJobTemplate,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	version, err := store.QueueVersion(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ids := range [][]string{
+		{first.ID},
+		{first.ID, first.ID},
+		{second.ID, first.ID},
+		{first.ID, second.ID, "extra"},
+	} {
+		if _, err := store.Reorder(ctx, ids, version); !errors.Is(err, ports.ErrConflict) {
+			t.Fatalf("Reorder(%#v) error = %v, want conflict", ids, err)
+		}
+	}
+}
+
 func TestStoreReorderAdvancesDedicatedQueueVersion(t *testing.T) {
 	t.Parallel()
 	store, err := Open(context.Background(), "file:test-queue-version?mode=memory&cache=shared")
@@ -200,6 +481,58 @@ func TestStoreReorderAdvancesDedicatedQueueVersion(t *testing.T) {
 	if version != currentVersion+1 || storedVersion != currentVersion+1 {
 		t.Fatalf("queue versions = returned %d stored %d, started at %d",
 			version, storedVersion, currentVersion)
+	}
+}
+
+func TestStoreQueueMembershipChangesAdvanceVersion(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store, err := Open(ctx, "file:test-queue-membership-version?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	job, err := store.Create(ctx, domain.CreateJob{
+		Name: "job", Namespace: "default", Template: validJobTemplate,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	createdVersion, err := store.QueueVersion(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.SetDesiredState(ctx, job.ID, domain.StatePaused); err != nil {
+		t.Fatal(err)
+	}
+	pausedVersion, err := store.QueueVersion(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pausedVersion != createdVersion+1 {
+		t.Fatalf("paused queue version = %d, want %d", pausedVersion, createdVersion+1)
+	}
+	running, err := store.Create(ctx, domain.CreateJob{
+		Name: "running", Namespace: "default", Template: validJobTemplate,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeRunning, err := store.QueueVersion(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.SetObserved(ctx, running.ID, domain.Observation{
+		State: domain.StateRunning, KubernetesUID: "running-uid", ObservedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	afterRunning, err := store.QueueVersion(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if afterRunning != beforeRunning+1 {
+		t.Fatalf("running queue version = %d, want %d", afterRunning, beforeRunning+1)
 	}
 }
 

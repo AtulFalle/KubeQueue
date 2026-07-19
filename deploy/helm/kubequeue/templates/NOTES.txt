@@ -7,3 +7,24 @@ The dashboard is an administrative surface. Keep it cluster-private and access i
 Then open http://127.0.0.1:3000.
 
 Do not expose the dashboard publicly without an external authentication layer.
+
+Watch mode: {{ .Values.watch.mode }}
+{{- if eq .Values.watch.mode "all" }}
+
+WARNING: cluster-wide discovery is enabled. The worker has cluster-scoped Job mutation authority.
+The following namespaces are excluded by configuration:
+{{- range .Values.watch.excludedNamespaces }}
+  - {{ . }}
+{{- end }}
+  - {{ .Release.Namespace }} (release namespace; always excluded)
+{{- else }}
+
+Managed namespaces:
+{{- if .Values.watch.namespaces }}
+{{- range .Values.watch.namespaces }}
+  - {{ . }}
+{{- end }}
+{{- else }}
+  - {{ .Release.Namespace }} (release namespace default)
+{{- end }}
+{{- end }}

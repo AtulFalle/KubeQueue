@@ -12,7 +12,9 @@
         "commands": [
           "docker compose config --quiet",
           "docker compose run --rm --no-deps helm helm lint deploy/helm/kubequeue --set-string database.url=postgres://example --set-string config.adminToken=test-token",
-          "docker compose run --rm --no-deps helm helm template kubequeue deploy/helm/kubequeue --set-string database.url=postgres://example --set-string config.adminToken=test-token"
+          "docker compose run --rm --no-deps helm helm template kubequeue deploy/helm/kubequeue --set-string database.url=postgres://example --set-string config.adminToken=test-token",
+          "docker compose run --rm --no-deps helm helm lint deploy/helm/kubequeue --set-string database.url=postgres://example --set-string config.adminToken=test-token --set-string watch.mode=all --set rbac.allowClusterWide=true",
+          "docker compose run --rm --no-deps helm helm template kubequeue deploy/helm/kubequeue --set-string database.url=postgres://example --set-string config.adminToken=test-token --set-string watch.mode=all --set rbac.allowClusterWide=true"
         ],
         "parallel": false
       }

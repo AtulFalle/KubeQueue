@@ -20,6 +20,11 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- if .Values.serviceAccount.create -}}
 {{- default (include "kubequeue.fullname" .) .Values.serviceAccount.name -}}
 {{- else -}}
-{{- default "default" .Values.serviceAccount.name -}}
+{{- required "serviceAccount.name is required when serviceAccount.create is false" .Values.serviceAccount.name -}}
 {{- end -}}
+{{- end }}
+
+{{- define "kubequeue.clusterResourceName" -}}
+{{- $namespaceHash := sha256sum .Release.Namespace | trunc 8 -}}
+{{- printf "%s-%s-worker" (include "kubequeue.fullname" .) $namespaceHash | trunc 63 | trimSuffix "-" -}}
 {{- end }}

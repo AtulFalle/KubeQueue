@@ -1,0 +1,2 @@
+ALTER TABLE jobs ADD COLUMN last_error_code TEXT NOT NULL DEFAULT '';
+ALTER TABLE jobs ADD COLUMN last_error_remediation TEXT NOT NULL DEFAULT '';
