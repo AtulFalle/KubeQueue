@@ -32,7 +32,7 @@ database:
   existingSecretKey: database-url
 
 networkPolicy:
-  enabled: false
+  enabled: true
 
 api:
   image:

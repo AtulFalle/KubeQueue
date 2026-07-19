@@ -100,6 +100,44 @@
         "command": "node tools/release-helm.mjs package"
       }
     },
+    "chart-acceptance": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "inputs": [
+        "default",
+        "^production",
+        "{workspaceRoot}/apps/control-plane/Dockerfile",
+        "{workspaceRoot}/apps/web/Dockerfile",
+        "{workspaceRoot}/deploy/kind/postgres.yaml",
+        "{workspaceRoot}/tools/deploy-acceptance.mjs"
+      ],
+      "options": {
+        "command": "node tools/deploy-acceptance.mjs install"
+      }
+    },
+    "chart-upgrade-acceptance": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "inputs": [
+        "default",
+        "^production",
+        "{workspaceRoot}/apps/control-plane/Dockerfile",
+        "{workspaceRoot}/apps/web/Dockerfile",
+        "{workspaceRoot}/deploy/kind/postgres.yaml",
+        "{workspaceRoot}/tools/deploy-acceptance.mjs",
+        { "env": "KUBEQUEUE_PREVIOUS_CHART" }
+      ],
+      "options": {
+        "command": "node tools/deploy-acceptance.mjs upgrade"
+      }
+    },
+    "chart-acceptance-teardown": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "node tools/deploy-acceptance.mjs teardown"
+      }
+    },
     "kind-create": {
       "executor": "nx:run-commands",
       "options": {

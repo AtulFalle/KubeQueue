@@ -81,7 +81,6 @@ func (r *Reconciler) Ready() bool {
 }
 
 func (r *Reconciler) reconcileAndRecord(ctx context.Context) error {
-	r.ready.Store(false)
 	reconcileErr := r.Reconcile(ctx)
 	statusErr := r.recordStatus(ctx, reconcileErr)
 	return errors.Join(reconcileErr, statusErr)
@@ -99,7 +98,6 @@ func (r *Reconciler) recordHeartbeat(ctx context.Context) error {
 
 func (r *Reconciler) recordStatus(ctx context.Context, reconcileErr error) error {
 	namespaceStatuses, effectiveNamespaces, authorityErr := r.authorityStatuses(ctx)
-	statusErr := errors.Join(reconcileErr, authorityErr)
 	now := time.Now().UTC()
 	status := domain.WorkerStatus{
 		State:                domain.WorkerStateReady,
@@ -112,15 +110,19 @@ func (r *Reconciler) recordStatus(ctx context.Context, reconcileErr error) error
 		NamespaceConcurrency: r.namespaceLimit,
 		ReleaseVersion:       r.releaseVersion,
 	}
-	if statusErr == nil {
+	if reconcileErr == nil {
 		status.LastSuccessfulReconciliationAt = &now
-		r.ready.Store(true)
-	} else {
+	}
+	if statusErr := errors.Join(reconcileErr, authorityErr); statusErr != nil {
 		status.State = domain.WorkerStateDegraded
 		status.ActiveError = statusErr.Error()
-		r.ready.Store(false)
 	}
-	return r.repository.UpdateWorkerStatus(ctx, status)
+	if err := r.repository.UpdateWorkerStatus(ctx, status); err != nil {
+		r.ready.Store(false)
+		return err
+	}
+	r.ready.Store(authorityErr == nil)
+	return nil
 }
 
 func (r *Reconciler) authorityStatuses(
@@ -309,10 +311,33 @@ func (r *Reconciler) discover(ctx context.Context, namespace string) error {
 		return errors.Join(append(discoveryErrors, err)...)
 	}
 	for _, stored := range storedJobs {
-		if !r.scope.Allows(stored.Namespace) || stored.KubernetesUID == "" || stored.Terminal() {
+		if !r.scope.Allows(stored.Namespace) || stored.KubernetesUID == "" {
 			continue
 		}
 		if _, exists := seenUIDs[stored.KubernetesUID]; exists {
+			continue
+		}
+		if stored.DesiredState == domain.StateCancelled &&
+			stored.ObservedState != domain.StateCancelled {
+			if _, err := r.repository.SetObserved(ctx, stored.ID, domain.Observation{
+				State:                   domain.StateCancelled,
+				KubernetesUID:           stored.KubernetesUID,
+				ResourceVersion:         stored.ResourceVersion,
+				ExpectedResourceVersion: stored.ResourceVersion,
+				Reason:                  "Terminated",
+				Message:                 "Kubernetes Job deletion was observed",
+				ObservedAt:              time.Now().UTC(),
+				ManagementMode:          domain.ManagementManaged,
+				SyncStatus:              domain.SyncStatusSynced,
+			}); err != nil {
+				discoveryErrors = append(
+					discoveryErrors,
+					r.recordJobError(ctx, stored, fmt.Errorf("observe Job %s termination: %w", stored.ID, err)),
+				)
+			}
+			continue
+		}
+		if stored.Terminal() {
 			continue
 		}
 		if _, err := r.repository.MarkMissing(
@@ -384,28 +409,30 @@ func (r *Reconciler) applyCommands(ctx context.Context, jobs []domain.Job) error
 			}
 		case domain.StateCancelled:
 			if job.ObservedState != domain.StateCancelled {
-				if err := r.kubernetes.DeleteJob(
+				deleteErr := r.kubernetes.DeleteJob(
 					ctx, job.Namespace, name, job.KubernetesUID, job.ResourceVersion,
-				); err != nil &&
-					!kube.IsNotFound(err) {
+				)
+				if deleteErr != nil && !kube.IsNotFound(deleteErr) {
 					commandErrors = append(
 						commandErrors,
-						r.recordJobError(ctx, job, fmt.Errorf("terminate Job %s: %w", job.ID, err)),
+						r.recordJobError(ctx, job, fmt.Errorf("terminate Job %s: %w", job.ID, deleteErr)),
 					)
 					continue
 				}
-				if _, err := r.repository.SetObserved(ctx, job.ID, domain.Observation{
-					State: domain.StateCancelled, KubernetesUID: job.KubernetesUID,
-					ResourceVersion:         job.ResourceVersion,
-					ExpectedResourceVersion: job.ResourceVersion,
-					Reason:                  "Terminated", Message: "Kubernetes Job was deleted",
-					ObservedAt: time.Now().UTC(), ManagementMode: domain.ManagementManaged,
-					SyncStatus: domain.SyncStatusSynced,
-				}); err != nil {
-					commandErrors = append(
-						commandErrors,
-						r.recordJobError(ctx, job, fmt.Errorf("record Job %s termination: %w", job.ID, err)),
-					)
+				if kube.IsNotFound(deleteErr) {
+					if _, err := r.repository.SetObserved(ctx, job.ID, domain.Observation{
+						State: domain.StateCancelled, KubernetesUID: job.KubernetesUID,
+						ResourceVersion:         job.ResourceVersion,
+						ExpectedResourceVersion: job.ResourceVersion,
+						Reason:                  "Terminated", Message: "Kubernetes Job deletion was observed",
+						ObservedAt: time.Now().UTC(), ManagementMode: domain.ManagementManaged,
+						SyncStatus: domain.SyncStatusSynced,
+					}); err != nil {
+						commandErrors = append(
+							commandErrors,
+							r.recordJobError(ctx, job, fmt.Errorf("record Job %s termination: %w", job.ID, err)),
+						)
+					}
 				}
 			}
 		}

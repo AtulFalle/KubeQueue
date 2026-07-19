@@ -18,6 +18,18 @@ services:
     volumes:
       - kubequeue-postgres:/var/lib/postgresql
 
+  migrate:
+    build:
+      context: .
+      dockerfile: apps/control-plane/Dockerfile.dev
+    command: ['go', 'run', './cmd/api', 'migrate']
+    environment:
+      KUBEQUEUE_DATABASE_URL: 'postgres://kubequeue:${POSTGRES_PASSWORD:-kubequeue}@postgres:5432/kubequeue?sslmode=disable'
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: 'no'
+
   api:
     build:
       context: .
@@ -30,8 +42,8 @@ services:
       KUBEQUEUE_LOG_LEVEL: debug
       KUBEQUEUE_PROCESS: api
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     healthcheck:
       test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://localhost:8080/healthz']
       interval: 5s
@@ -70,8 +82,8 @@ services:
       KUBEQUEUE_LOG_LEVEL: debug
       KUBEQUEUE_PROCESS: worker
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     init: true
     develop:
       watch:

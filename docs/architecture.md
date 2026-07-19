@@ -57,7 +57,8 @@ failure only until their expiry. Queue ordering has its own monotonic version in
 SQLite uses the same schema and transactions but remains limited to one worker.
 
 Schema changes are ordered embedded migrations. PostgreSQL migration execution takes an advisory
-transaction lock, and the Helm chart runs a migration hook before API and worker upgrades.
+lock, and the Helm chart runs a dedicated migration hook before API and worker upgrades. Runtime
+processes verify migration checksums and schema compatibility at startup but never apply migrations.
 
 ## Contract and delivery
 

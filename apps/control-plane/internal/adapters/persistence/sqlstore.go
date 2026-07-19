@@ -3,12 +3,9 @@ package persistence
 import (
 	"context"
 	"database/sql"
-	"embed"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/fs"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -20,15 +17,39 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-//go:embed migrations/*.sql
-var migrationFiles embed.FS
-
 type Store struct {
 	db       *sql.DB
 	postgres bool
 }
 
+// Open opens a store and applies migrations. It is intended for local composition and tests.
+// Production processes must use OpenCompatible or the dedicated Migrate entry point.
 func Open(ctx context.Context, databaseURL string) (*Store, error) {
+	store, err := open(ctx, databaseURL)
+	if err != nil {
+		return nil, err
+	}
+	if err := store.migrate(ctx); err != nil {
+		_ = store.Close()
+		return nil, err
+	}
+	return store, nil
+}
+
+// OpenCompatible opens a store only when its schema is compatible with this binary.
+func OpenCompatible(ctx context.Context, databaseURL string) (*Store, error) {
+	store, err := open(ctx, databaseURL)
+	if err != nil {
+		return nil, err
+	}
+	if err := store.VerifySchema(ctx); err != nil {
+		_ = store.Close()
+		return nil, err
+	}
+	return store, nil
+}
+
+func open(ctx context.Context, databaseURL string) (*Store, error) {
 	driver := "sqlite"
 	dsn := databaseURL
 	postgres := strings.HasPrefix(databaseURL, "postgres://") ||
@@ -47,10 +68,6 @@ func Open(ctx context.Context, databaseURL string) (*Store, error) {
 	if err := db.PingContext(ctx); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("ping database: %w", err)
-	}
-	if err := store.migrate(ctx); err != nil {
-		_ = db.Close()
-		return nil, err
 	}
 	return store, nil
 }
@@ -118,93 +135,6 @@ func (s *Store) WorkerStatus(ctx context.Context) (domain.WorkerStatus, error) {
 		return domain.WorkerStatus{}, fmt.Errorf("decode namespace statuses: %w", err)
 	}
 	return status, nil
-}
-
-func (s *Store) migrate(ctx context.Context) error {
-	eventsID := "INTEGER PRIMARY KEY AUTOINCREMENT"
-	if s.postgres {
-		eventsID = "BIGSERIAL PRIMARY KEY"
-	}
-	if _, err := s.db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (
-		version TEXT PRIMARY KEY, applied_at TEXT NOT NULL
-	)`); err != nil {
-		return fmt.Errorf("create migration history: %w", err)
-	}
-	entries, err := fs.Glob(migrationFiles, "migrations/*.sql")
-	if err != nil {
-		return fmt.Errorf("list migrations: %w", err)
-	}
-	sort.Strings(entries)
-	for _, name := range entries {
-		tx, err := s.db.BeginTx(ctx, nil)
-		if err != nil {
-			return fmt.Errorf("begin migration %s: %w", name, err)
-		}
-		if s.postgres {
-			if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext('kubequeue_migrations'))`); err != nil {
-				_ = tx.Rollback()
-				return fmt.Errorf("lock migrations: %w", err)
-			}
-		}
-		var applied int
-		if err := tx.QueryRowContext(ctx, s.bind(
-			`SELECT COUNT(*) FROM schema_migrations WHERE version=?`), name).Scan(&applied); err != nil {
-			_ = tx.Rollback()
-			return fmt.Errorf("check migration %s: %w", name, err)
-		}
-		if applied > 0 {
-			if err := tx.Commit(); err != nil {
-				return fmt.Errorf("commit migration check %s: %w", name, err)
-			}
-			continue
-		}
-		migration, err := migrationFiles.ReadFile(name)
-		if err != nil {
-			_ = tx.Rollback()
-			return fmt.Errorf("read migration %s: %w", name, err)
-		}
-		statement := strings.ReplaceAll(string(migration), "{{EVENTS_ID}}", eventsID)
-		statement = strings.ReplaceAll(
-			statement, "{{ARCHIVE_IGNORED_JOBS}}", s.archiveIgnoredJobsStatement(),
-		)
-		for _, command := range strings.Split(statement, ";") {
-			if strings.TrimSpace(command) == "" {
-				continue
-			}
-			if _, err := tx.ExecContext(ctx, command); err != nil {
-				_ = tx.Rollback()
-				return fmt.Errorf("apply migration %s: %w", name, err)
-			}
-		}
-		if _, err := tx.ExecContext(ctx, s.bind(
-			`INSERT INTO schema_migrations(version,applied_at) VALUES(?,?)`),
-			name, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
-			_ = tx.Rollback()
-			return fmt.Errorf("record migration %s: %w", name, err)
-		}
-		if err := tx.Commit(); err != nil {
-			return fmt.Errorf("commit migration %s: %w", name, err)
-		}
-	}
-	return nil
-}
-
-func (s *Store) archiveIgnoredJobsStatement() string {
-	ignoredAnnotation := `json_extract(template, '$.metadata.annotations."kubequeue.io/ignore"')`
-	helmHookAnnotation := `json_extract(template, '$.metadata.annotations."helm.sh/hook"')`
-	internalLabel := `json_extract(template, '$.metadata.labels."kubequeue.io/internal"')`
-	if s.postgres {
-		ignoredAnnotation = `template::jsonb -> 'metadata' -> 'annotations' ->> 'kubequeue.io/ignore'`
-		helmHookAnnotation = `template::jsonb -> 'metadata' -> 'annotations' ->> 'helm.sh/hook'`
-		internalLabel = `template::jsonb -> 'metadata' -> 'labels' ->> 'kubequeue.io/internal'`
-	}
-	return fmt.Sprintf(`UPDATE jobs
-		SET management_mode='IGNORED', sync_status='STALE',
-			archived_at=COALESCE(archived_at, updated_at)
-		WHERE LOWER(COALESCE(%s, ''))='true'
-			OR COALESCE(%s, '')<>''
-			OR LOWER(COALESCE(%s, ''))='true'`,
-		ignoredAnnotation, helmHookAnnotation, internalLabel)
 }
 
 func (s *Store) Create(ctx context.Context, input domain.CreateJob) (domain.Job, error) {
