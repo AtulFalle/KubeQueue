@@ -349,7 +349,12 @@ function testAllMode() {
     ],
     { capture: true },
   );
-  if (!roleResult.stdout.includes('clusterrole.rbac.authorization.k8s.io/')) {
+  const hasClusterRole = roleResult.stdout
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .some((line) => /^clusterrole\.rbac\.authorization\.k8s\.io\/\S+$/.test(line));
+  if (!hasClusterRole) {
     throw new Error(`No cluster-wide worker role was created for ${release}`);
   }
   assertCanI(observedNamespace, namespace, `${release}-kubequeue`, 'yes');
