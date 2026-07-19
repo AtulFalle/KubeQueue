@@ -9,6 +9,7 @@ export default defineConfig({
       '@kubequeue/api-client': fileURLToPath(
         new URL('../../packages/api-client/src/index.ts', import.meta.url),
       ),
+      'server-only': fileURLToPath(new URL('./src/test/server-only.ts', import.meta.url)),
     },
   },
   test: {

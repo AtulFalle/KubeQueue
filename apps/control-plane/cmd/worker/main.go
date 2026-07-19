@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/AtulFalle/KubeQueue/apps/control-plane/internal/platform/logging"
 	"github.com/AtulFalle/KubeQueue/apps/control-plane/internal/platform/worker"
 )
 
@@ -16,6 +17,7 @@ func main() {
 }
 
 func run() int {
+	logging.Initialize("worker")
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 

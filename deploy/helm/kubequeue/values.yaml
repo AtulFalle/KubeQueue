@@ -22,9 +22,23 @@ watch:
 config:
   globalConcurrency: 10
   namespaceConcurrency: 5
-  adminToken: ''
-  adminTokenExistingSecret: ''
-  adminTokenExistingSecretKey: admin-token
+
+runtime:
+  environment: production
+
+development:
+  localAdminSeed: false
+
+browser:
+  publicURL: ''
+  origin: ''
+
+security:
+  existingSecret: ''
+  sessionDigestKey: session-digest-key
+  credentialEncryptionKey: credential-encryption-key
+  bffInternalKey: bff-internal-key
+  serviceAccountDigestKey: service-account-digest-key
 
 database:
   url: ''

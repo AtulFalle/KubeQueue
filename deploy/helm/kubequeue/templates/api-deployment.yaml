@@ -15,6 +15,7 @@ spec:
     metadata:
       annotations:
         checksum/runtime-config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/security-reference: {{ include "kubequeue.securityReferenceChecksum" . }}
       labels:
         app.kubernetes.io/name: {{ include "kubequeue.name" . }}
         app.kubernetes.io/instance: {{ .Release.Name }}
@@ -46,11 +47,26 @@ spec:
                 secretKeyRef:
                   name: {{ default (printf "%s-config" (include "kubequeue.fullname" .)) .Values.database.existingSecret }}
                   key: {{ .Values.database.existingSecretKey }}
-            - name: KUBEQUEUE_ADMIN_TOKEN
+            - name: KUBEQUEUE_SESSION_DIGEST_KEY
               valueFrom:
                 secretKeyRef:
-                  name: {{ default (printf "%s-config" (include "kubequeue.fullname" .)) .Values.config.adminTokenExistingSecret }}
-                  key: {{ .Values.config.adminTokenExistingSecretKey }}
+                  name: {{ include "kubequeue.securitySecretName" . }}
+                  key: {{ .Values.security.sessionDigestKey }}
+            - name: KUBEQUEUE_SESSION_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "kubequeue.securitySecretName" . }}
+                  key: {{ .Values.security.credentialEncryptionKey }}
+            - name: KUBEQUEUE_BFF_INTERNAL_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "kubequeue.securitySecretName" . }}
+                  key: {{ .Values.security.bffInternalKey }}
+            - name: KUBEQUEUE_SERVICE_ACCOUNT_DIGEST_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "kubequeue.securitySecretName" . }}
+                  key: {{ .Values.security.serviceAccountDigestKey }}
           readinessProbe:
             httpGet:
               path: /readyz

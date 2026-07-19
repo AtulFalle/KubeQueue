@@ -272,13 +272,19 @@ jobs:
         run: |
           docker run --rm --network host \
             -e KUBEQUEUE_DATABASE_URL="${KUBEQUEUE_TEST_POSTGRES_URL}" \
-            -e KUBEQUEUE_ADMIN_TOKEN=release-validation-token \
+            -e KUBEQUEUE_ENVIRONMENT=test \
+            -e KUBEQUEUE_BROWSER_ORIGIN=http://127.0.0.1:3000 \
+            -e KUBEQUEUE_BFF_INTERNAL_KEY=release-validation-bff-key-000000 \
+            -e KUBEQUEUE_SESSION_DIGEST_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= \
+            -e KUBEQUEUE_SESSION_ENCRYPTION_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= \
+            -e KUBEQUEUE_SERVICE_ACCOUNT_DIGEST_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= \
             --name kubequeue-api-smoke \
             "ghcr.io/atulfalle/kubequeue-api:sha-${RELEASE_SHA}" &
           api_pid=$!
           docker run --rm --network host \
             -e KUBEQUEUE_API_INTERNAL_URL=http://127.0.0.1:8080 \
-            -e KUBEQUEUE_ADMIN_TOKEN=release-validation-token \
+            -e KUBEQUEUE_PUBLIC_URL=http://127.0.0.1:3000 \
+            -e KUBEQUEUE_BFF_INTERNAL_KEY=release-validation-bff-key-000000 \
             --name kubequeue-web-smoke \
             "ghcr.io/atulfalle/kubequeue-web:sha-${RELEASE_SHA}" &
           web_pid=$!

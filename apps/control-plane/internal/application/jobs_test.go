@@ -15,14 +15,14 @@ import (
 
 func TestRetryCreatesLinkedAttempt(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := legacyContext()
 	store, err := persistence.Open(ctx, "file:test-application-retry?mode=memory&cache=shared")
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
 	setReadyWorkerStatus(t, store, "default")
-	jobs := application.NewJobs(store, selectedScope(t, "default"))
+	jobs := authorizedJobs(t, store, selectedScope(t, "default"))
 	original, err := jobs.Create(ctx, domain.CreateJob{
 		Name: "report", Namespace: "default", Template: json.RawMessage(`{
 			"spec":{"template":{"spec":{"restartPolicy":"Never","containers":[{"name":"job","image":"busybox"}]}}}
@@ -30,6 +30,12 @@ func TestRetryCreatesLinkedAttempt(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if original.ProjectID != "default" ||
+		original.NamespaceBindingID != "default__default" ||
+		original.CreatorPrincipalID != "legacy_admin" ||
+		original.SubmissionSource != domain.SubmissionSourceAPI {
+		t.Fatalf("submission ownership = %#v", original)
 	}
 	if _, err := store.SetObserved(ctx, original.ID, domain.Observation{
 		State: domain.StateFailed, KubernetesUID: "uid",
@@ -58,7 +64,7 @@ func TestRetryCreatesLinkedAttempt(t *testing.T) {
 
 func TestJobsExposeGlobalFacetsAndCompleteQueue(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := legacyContext()
 	store, err := persistence.Open(ctx, "file:test-application-inventory?mode=memory&cache=shared")
 	if err != nil {
 		t.Fatal(err)
@@ -80,7 +86,7 @@ func TestJobsExposeGlobalFacetsAndCompleteQueue(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	jobs := application.NewJobs(store, selectedScope(t, "batch", "default"))
+	jobs := authorizedJobs(t, store, selectedScope(t, "batch", "default"))
 	facets, err := jobs.Facets(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -99,7 +105,7 @@ func TestJobsExposeGlobalFacetsAndCompleteQueue(t *testing.T) {
 
 func TestCommandRejectsObservedJob(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := legacyContext()
 	store, err := persistence.Open(ctx, "file:test-observed-command?mode=memory&cache=shared")
 	if err != nil {
 		t.Fatal(err)
@@ -117,7 +123,7 @@ func TestCommandRejectsObservedJob(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = application.NewJobs(store, selectedScope(t, "default")).Command(ctx, observed.ID, "pause")
+	_, err = authorizedJobs(t, store, selectedScope(t, "default")).Command(ctx, observed.ID, "pause")
 	if !errors.Is(err, domain.ErrUnmanagedJob) {
 		t.Fatalf("Command() error = %v, want unmanaged Job", err)
 	}
@@ -125,14 +131,14 @@ func TestCommandRejectsObservedJob(t *testing.T) {
 
 func TestArchiveIsLimitedToStaleRecordsAndIdempotent(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := legacyContext()
 	store, err := persistence.Open(ctx, "file:test-archive?mode=memory&cache=shared")
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
 	setReadyWorkerStatus(t, store, "default")
-	jobs := application.NewJobs(store, selectedScope(t, "default"))
+	jobs := authorizedJobs(t, store, selectedScope(t, "default"))
 	job, err := jobs.Create(ctx, domain.CreateJob{
 		Name: "job", Namespace: "default", Template: json.RawMessage(`{
 			"spec":{"template":{"spec":{"restartPolicy":"Never","containers":[{"name":"job","image":"busybox"}]}}}
@@ -168,13 +174,13 @@ func TestArchiveIsLimitedToStaleRecordsAndIdempotent(t *testing.T) {
 
 func TestCreateRejectsNamespaceOutsideEffectiveScope(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := legacyContext()
 	store, err := persistence.Open(ctx, "file:test-create-scope?mode=memory&cache=shared")
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
-	jobs := application.NewJobs(store, selectedScope(t, "batch"))
+	jobs := authorizedJobs(t, store, selectedScope(t, "batch"))
 
 	_, err = jobs.Create(ctx, domain.CreateJob{
 		Name: "job", Namespace: "other", Template: json.RawMessage(`{
@@ -195,7 +201,7 @@ func TestCreateRejectsNamespaceOutsideEffectiveScope(t *testing.T) {
 
 func TestCreateRejectsNamespaceWithoutWorkerReadiness(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := legacyContext()
 	store, err := persistence.Open(ctx, "file:test-create-readiness?mode=memory&cache=shared")
 	if err != nil {
 		t.Fatal(err)
@@ -213,7 +219,7 @@ func TestCreateRejectsNamespaceWithoutWorkerReadiness(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	jobs := application.NewJobs(store, selectedScope(t, "batch"))
+	jobs := authorizedJobs(t, store, selectedScope(t, "batch"))
 	_, err = jobs.Create(ctx, domain.CreateJob{
 		Name: "job", Namespace: "batch", Template: json.RawMessage(`{
 			"spec":{"template":{"spec":{"restartPolicy":"Never","containers":[{"name":"job","image":"busybox"}]}}}
@@ -224,6 +230,198 @@ func TestCreateRejectsNamespaceWithoutWorkerReadiness(t *testing.T) {
 	}
 }
 
+func TestJobAuthorizationIsActionSpecificAndNonEnumerating(t *testing.T) {
+	t.Parallel()
+	ctx := application.WithActor(context.Background(), domain.Actor{
+		PrincipalID: "ordinary_user", InstallationID: "default",
+	})
+	store, err := persistence.Open(ctx, "file:test-action-authorization?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	scope := selectedScope(t, "default")
+	if err := store.BackfillCompatibility(ctx, scope); err != nil {
+		t.Fatal(err)
+	}
+	job, err := store.Create(ctx, domain.CreateJob{
+		Name: "authorized-job", Namespace: "default",
+		Template: json.RawMessage(`{
+			"spec":{"template":{"spec":{"restartPolicy":"Never","containers":[{"name":"job","image":"busybox"}]}}}
+		}`),
+		ProjectID: "default", NamespaceBindingID: "default__default",
+		CreatorPrincipalID: "legacy_admin", SubmissionSource: domain.SubmissionSourceAPI,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	authorizer := &permissionAuthorizer{
+		allowed: map[domain.Permission][]domain.ProjectID{
+			domain.PermissionJobsPause: {"default"},
+			domain.PermissionJobsRead:  {"other"},
+		},
+	}
+	jobs := application.NewJobs(store, scope, authorizer)
+	if _, err := jobs.Command(ctx, job.ID, "pause"); err != nil {
+		t.Fatalf("pause with pause permission failed: %v", err)
+	}
+	if _, err := jobs.Command(ctx, job.ID, "resume"); !errors.Is(err, ports.ErrNotFound) {
+		t.Fatalf("resume without resume permission error = %v, want non-enumerating not found", err)
+	}
+	if _, err := jobs.Get(ctx, job.ID); !errors.Is(err, ports.ErrNotFound) {
+		t.Fatalf("cross-project Get() error = %v, want not found", err)
+	}
+}
+
+func TestManifestAuthorizationIsIndependentAndNonEnumerating(t *testing.T) {
+	t.Parallel()
+	ctx := application.WithActor(context.Background(), domain.Actor{
+		PrincipalID: "ordinary_user", InstallationID: "default",
+	})
+	store, err := persistence.Open(ctx, "file:test-manifest-authorization?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	scope := selectedScope(t, "default")
+	if err := store.BackfillCompatibility(ctx, scope); err != nil {
+		t.Fatal(err)
+	}
+	template := json.RawMessage(`{
+		"spec":{"template":{"spec":{"restartPolicy":"Never","containers":[{"name":"job","image":"busybox"}]}}}
+	}`)
+	job, err := store.Create(ctx, domain.CreateJob{
+		Name: "manifest-job", Namespace: "default", Template: template,
+		ProjectID: "default", NamespaceBindingID: "default__default",
+		CreatorPrincipalID: "legacy_admin", SubmissionSource: domain.SubmissionSourceAPI,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	readOnly := application.NewJobs(store, scope, &permissionAuthorizer{
+		allowed: map[domain.Permission][]domain.ProjectID{
+			domain.PermissionJobsRead: {"default"},
+		},
+	})
+	if _, err := readOnly.Get(ctx, job.ID); err != nil {
+		t.Fatalf("metadata read failed: %v", err)
+	}
+	if _, err := readOnly.Manifest(ctx, job.ID); !errors.Is(err, ports.ErrNotFound) {
+		t.Fatalf("Manifest() without permission error = %v, want non-enumerating not found", err)
+	}
+
+	manifestReader := application.NewJobs(store, scope, &permissionAuthorizer{
+		allowed: map[domain.Permission][]domain.ProjectID{
+			domain.PermissionJobsManifestRead: {"default"},
+		},
+	})
+	manifest, err := manifestReader.Manifest(ctx, job.ID)
+	if err != nil {
+		t.Fatalf("Manifest() with permission failed: %v", err)
+	}
+	if string(manifest) != string(template) {
+		t.Fatalf("Manifest() = %s, want %s", manifest, template)
+	}
+
+	crossProject := application.NewJobs(store, scope, &permissionAuthorizer{
+		allowed: map[domain.Permission][]domain.ProjectID{
+			domain.PermissionJobsManifestRead: {"other"},
+		},
+	})
+	if _, err := crossProject.Manifest(ctx, job.ID); !errors.Is(err, ports.ErrNotFound) {
+		t.Fatalf("cross-project Manifest() error = %v, want non-enumerating not found", err)
+	}
+}
+
+func TestJobsRejectMissingPrincipal(t *testing.T) {
+	t.Parallel()
+	store, err := persistence.Open(
+		context.Background(), "file:test-missing-principal?mode=memory&cache=shared",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	jobs := application.NewJobs(store, selectedScope(t, "default"), store)
+	if _, err := jobs.List(context.Background(), ports.JobFilter{}); !errors.Is(err, application.ErrMissingPrincipal) {
+		t.Fatalf("List() error = %v, want missing principal", err)
+	}
+}
+
+func TestListPageIntersectsRequestedProjectWithAuthorizedScope(t *testing.T) {
+	t.Parallel()
+	ctx := legacyContext()
+	store, err := persistence.Open(ctx, "file:test-list-project-intersection?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	scope := selectedScope(t, "default")
+	if err := store.BackfillCompatibility(ctx, scope); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Create(ctx, domain.CreateJob{
+		Name: "default-job", Namespace: "default", Template: json.RawMessage(`{
+			"spec":{"template":{"spec":{"restartPolicy":"Never","containers":[{"name":"job","image":"busybox"}]}}}
+		}`),
+		ProjectID: "default", NamespaceBindingID: "default__default",
+		CreatorPrincipalID: "legacy_admin",
+		SubmissionSource:   domain.SubmissionSourceLegacyCompatibility,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	jobs := application.NewJobs(store, scope, &permissionAuthorizer{
+		allowed: map[domain.Permission][]domain.ProjectID{
+			domain.PermissionJobsList: {"default"},
+		},
+	})
+	page, err := jobs.ListPage(ctx, ports.JobPageRequest{
+		Filter: ports.JobFilter{ProjectID: "other"},
+		Sort:   ports.JobSortQueue, Limit: 50,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Items) != 0 {
+		t.Fatalf("cross-project filter returned %#v", page.Items)
+	}
+}
+
+type permissionAuthorizer struct {
+	allowed map[domain.Permission][]domain.ProjectID
+}
+
+func (a *permissionAuthorizer) Authorize(
+	_ context.Context,
+	_ domain.Actor,
+	permission domain.Permission,
+	scope domain.AuthorizationScope,
+) error {
+	for _, projectID := range a.allowed[permission] {
+		if projectID == scope.ProjectID {
+			return nil
+		}
+	}
+	return domain.ErrAccessDenied
+}
+
+func (a *permissionAuthorizer) AccessibleScope(
+	_ context.Context,
+	actor domain.Actor,
+	permission domain.Permission,
+) (domain.AccessScope, error) {
+	projects := a.allowed[permission]
+	if len(projects) == 0 {
+		return domain.AccessScope{}, domain.ErrAccessDenied
+	}
+	return domain.AccessScope{
+		InstallationID: actor.InstallationID,
+		ProjectIDs:     projects,
+	}, nil
+}
+
 func selectedScope(t *testing.T, namespaces ...string) domain.NamespaceScope {
 	t.Helper()
 	scope, err := domain.NewNamespaceScope(domain.WatchModeSelected, namespaces, nil)
@@ -231,6 +429,22 @@ func selectedScope(t *testing.T, namespaces ...string) domain.NamespaceScope {
 		t.Fatal(err)
 	}
 	return scope
+}
+
+func legacyContext() context.Context {
+	return application.WithActor(context.Background(), domain.Actor{
+		PrincipalID: "legacy_admin", InstallationID: "default",
+	})
+}
+
+func authorizedJobs(
+	t *testing.T, store *persistence.Store, scope domain.NamespaceScope,
+) *application.Jobs {
+	t.Helper()
+	if err := store.BackfillCompatibility(context.Background(), scope); err != nil {
+		t.Fatal(err)
+	}
+	return application.NewJobs(store, scope, store)
 }
 
 func setReadyWorkerStatus(t *testing.T, store *persistence.Store, namespaces ...string) {

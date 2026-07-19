@@ -11,13 +11,22 @@ import (
 
 type System struct {
 	repository ports.Repository
+	authorizer Authorizer
 }
 
-func NewSystem(repository ports.Repository) *System {
-	return &System{repository: repository}
+func NewSystem(repository ports.Repository, authorizer Authorizer) *System {
+	return &System{repository: repository, authorizer: authorizer}
 }
 
 func (s *System) Status(ctx context.Context) (domain.SystemStatus, error) {
+	actor, err := ActorFromContext(ctx)
+	if err != nil {
+		return domain.SystemStatus{}, err
+	}
+	if err := s.authorizer.Authorize(ctx, actor, domain.PermissionSystemStatusRead,
+		domain.AuthorizationScope{InstallationID: actor.InstallationID}); err != nil {
+		return domain.SystemStatus{}, err
+	}
 	if err := s.repository.Ping(ctx); err != nil {
 		return domain.SystemStatus{}, fmt.Errorf("check database readiness: %w", err)
 	}

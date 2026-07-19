@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/AtulFalle/KubeQueue/apps/control-plane/internal/adapters/persistence"
+	"github.com/AtulFalle/KubeQueue/apps/control-plane/internal/platform/config"
 )
 
 const timeout = 4 * time.Minute
@@ -15,5 +16,13 @@ const timeout = 4 * time.Minute
 func Run(ctx context.Context) error {
 	migrationContext, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	return persistence.Migrate(migrationContext, os.Getenv("KUBEQUEUE_DATABASE_URL"))
+	namespaceScope, err := config.NamespaceScopeFromEnvironment()
+	if err != nil {
+		return err
+	}
+	return persistence.MigrateAndBackfill(
+		migrationContext,
+		os.Getenv("KUBEQUEUE_DATABASE_URL"),
+		namespaceScope,
+	)
 }

@@ -1,7 +1,6 @@
 package application_test
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -12,15 +11,19 @@ import (
 
 func TestSystemStatusReportsHealthyWorker(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := legacyContext()
 	store, err := persistence.Open(ctx, "file:test-system-status?mode=memory&cache=shared")
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
 	setReadyWorkerStatus(t, store, "default")
+	scope := selectedScope(t, "default")
+	if err := store.BackfillCompatibility(ctx, scope); err != nil {
+		t.Fatal(err)
+	}
 
-	status, err := application.NewSystem(store).Status(ctx)
+	status, err := application.NewSystem(store, store).Status(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -33,7 +36,7 @@ func TestSystemStatusReportsHealthyWorker(t *testing.T) {
 
 func TestSystemStatusMarksStaleWorkerUnavailable(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := legacyContext()
 	store, err := persistence.Open(ctx, "file:test-system-status-stale?mode=memory&cache=shared")
 	if err != nil {
 		t.Fatal(err)
@@ -47,8 +50,11 @@ func TestSystemStatusMarksStaleWorkerUnavailable(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	if err := store.BackfillCompatibility(ctx, selectedScope(t, "default")); err != nil {
+		t.Fatal(err)
+	}
 
-	status, err := application.NewSystem(store).Status(ctx)
+	status, err := application.NewSystem(store, store).Status(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}

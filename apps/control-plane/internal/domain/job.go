@@ -42,44 +42,51 @@ const (
 )
 
 var (
-	ErrInvalidTransition = errors.New("invalid lifecycle transition")
-	ErrUnmanagedJob      = errors.New("job is not managed by KubeQueue")
-	ErrNotArchivable     = errors.New("job is not stale and cannot be archived")
+	ErrInvalidTransition   = errors.New("invalid lifecycle transition")
+	ErrUnmanagedJob        = errors.New("job is not managed by KubeQueue")
+	ErrNotArchivable       = errors.New("job is not stale and cannot be archived")
+	ErrIdempotencyConflict = errors.New("idempotency key was already used for different Job intent")
 )
 var dnsLabel = regexp.MustCompile(`^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$`)
+var idempotencyKey = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,127}$`)
 
 type Job struct {
-	ID               string          `json:"id"`
-	ParentID         string          `json:"parentId,omitempty"`
-	Name             string          `json:"name"`
-	Namespace        string          `json:"namespace"`
-	Team             string          `json:"team,omitempty"`
-	Priority         int             `json:"priority"`
-	Position         int64           `json:"position"`
-	DesiredState     State           `json:"desiredState"`
-	ObservedState    State           `json:"observedState"`
-	ManagementMode   ManagementMode  `json:"managementMode"`
-	SyncStatus       SyncStatus      `json:"syncStatus"`
-	ActionPending    bool            `json:"actionPending"`
-	ObservedReason   string          `json:"observedReason,omitempty"`
-	ObservedMessage  string          `json:"observedMessage,omitempty"`
-	ObservedAt       *time.Time      `json:"observedAt,omitempty"`
-	LastError        string          `json:"lastError,omitempty"`
-	LastErrorCode    string          `json:"lastErrorCode,omitempty"`
-	ErrorRemediation string          `json:"errorRemediation,omitempty"`
-	ScheduledFor     *time.Time      `json:"scheduledFor,omitempty"`
-	KubernetesUID    string          `json:"kubernetesUid,omitempty"`
-	Template         json.RawMessage `json:"template"`
-	Attempt          int             `json:"attempt"`
-	Version          int64           `json:"version"`
-	CreatedAt        time.Time       `json:"createdAt"`
-	UpdatedAt        time.Time       `json:"updatedAt"`
-	ResourceVersion  string          `json:"-"`
-	LastSeenAt       *time.Time      `json:"-"`
-	PendingAction    string          `json:"-"`
-	ReconcileRetries int             `json:"-"`
-	NextReconcileAt  *time.Time      `json:"-"`
-	ArchivedAt       *time.Time      `json:"-"`
+	ID                 string             `json:"id"`
+	ParentID           string             `json:"parentId,omitempty"`
+	ProjectID          ProjectID          `json:"projectId"`
+	NamespaceBindingID NamespaceBindingID `json:"namespaceBindingId"`
+	CreatorPrincipalID PrincipalID        `json:"creatorPrincipalId"`
+	SubmissionSource   SubmissionSource   `json:"submissionSource"`
+	IdempotencyKey     string             `json:"-"`
+	Name               string             `json:"name"`
+	Namespace          string             `json:"namespace"`
+	Team               string             `json:"team,omitempty"`
+	Priority           int                `json:"priority"`
+	Position           int64              `json:"position"`
+	DesiredState       State              `json:"desiredState"`
+	ObservedState      State              `json:"observedState"`
+	ManagementMode     ManagementMode     `json:"managementMode"`
+	SyncStatus         SyncStatus         `json:"syncStatus"`
+	ActionPending      bool               `json:"actionPending"`
+	ObservedReason     string             `json:"observedReason,omitempty"`
+	ObservedMessage    string             `json:"observedMessage,omitempty"`
+	ObservedAt         *time.Time         `json:"observedAt,omitempty"`
+	LastError          string             `json:"lastError,omitempty"`
+	LastErrorCode      string             `json:"lastErrorCode,omitempty"`
+	ErrorRemediation   string             `json:"errorRemediation,omitempty"`
+	ScheduledFor       *time.Time         `json:"scheduledFor,omitempty"`
+	KubernetesUID      string             `json:"kubernetesUid,omitempty"`
+	Template           json.RawMessage    `json:"template"`
+	Attempt            int                `json:"attempt"`
+	Version            int64              `json:"version"`
+	CreatedAt          time.Time          `json:"createdAt"`
+	UpdatedAt          time.Time          `json:"updatedAt"`
+	ResourceVersion    string             `json:"-"`
+	LastSeenAt         *time.Time         `json:"-"`
+	PendingAction      string             `json:"-"`
+	ReconcileRetries   int                `json:"-"`
+	NextReconcileAt    *time.Time         `json:"-"`
+	ArchivedAt         *time.Time         `json:"-"`
 }
 
 type Observation struct {
@@ -111,17 +118,26 @@ type JobFacets struct {
 }
 
 type CreateJob struct {
-	Name         string
-	Namespace    string
-	Team         string
-	Priority     int
-	ScheduledFor *time.Time
-	Template     json.RawMessage
-	ParentID     string
-	Attempt      int
+	ID                 string
+	Name               string
+	Namespace          string
+	Team               string
+	Priority           int
+	ScheduledFor       *time.Time
+	Template           json.RawMessage
+	ParentID           string
+	Attempt            int
+	ProjectID          ProjectID
+	NamespaceBindingID NamespaceBindingID
+	CreatorPrincipalID PrincipalID
+	SubmissionSource   SubmissionSource
+	IdempotencyKey     string
 }
 
 func (c CreateJob) Validate() error {
+	if c.IdempotencyKey != "" && !idempotencyKey.MatchString(c.IdempotencyKey) {
+		return errors.New("idempotency key is invalid")
+	}
 	if strings.TrimSpace(c.Name) == "" || strings.TrimSpace(c.Namespace) == "" {
 		return errors.New("name and namespace are required")
 	}

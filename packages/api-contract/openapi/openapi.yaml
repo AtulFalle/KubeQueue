@@ -12,6 +12,1274 @@ servers:
 security:
   - bearerAuth: []
 paths:
+  /login-methods:
+    get:
+      summary: List enabled browser login methods
+      description: Returns only secret-free methods that are currently enabled and safe to advertise before authentication.
+      operationId: listEnabledLoginMethods
+      security: []
+      responses:
+        '200':
+          description: Enabled secret-free browser login methods
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LoginMethodList' }
+        '429': { $ref: '#/components/responses/Error' }
+  /oauth/login-attempts:
+    post:
+      summary: Start a server-side OAuth login attempt
+      description: Internal BFF endpoint authenticated with the installation BFF key.
+      operationId: createOAuthLoginAttempt
+      security: []
+      parameters:
+        - name: X-KubeQueue-BFF-Key
+          in: header
+          required: true
+          schema: { type: string, minLength: 32 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                returnTo: { type: string, maxLength: 2048 }
+      responses:
+        '201':
+          description: One-time OAuth state
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OAuthLoginAttempt' }
+        '401': { $ref: '#/components/responses/Error' }
+  /oauth/login-attempts/consume:
+    post:
+      summary: Consume a server-side OAuth login attempt
+      description: Internal one-time BFF callback endpoint.
+      operationId: consumeOAuthLoginAttempt
+      security: []
+      parameters:
+        - name: X-KubeQueue-BFF-Key
+          in: header
+          required: true
+          schema: { type: string, minLength: 32 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [state]
+              properties:
+                state: { type: string, minLength: 1, maxLength: 256 }
+      responses:
+        '200':
+          description: Consumed OAuth verifier and nonce
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ConsumedOAuthLoginAttempt' }
+        '401': { $ref: '#/components/responses/Error' }
+  /oauth/token-exchange:
+    post:
+      summary: Exchange an OIDC authorization code
+      description: Internal BFF endpoint that exchanges an authorization code and PKCE verifier with an enabled dynamic provider. The confidential client secret is never returned.
+      operationId: exchangeOIDCAuthorizationCode
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/BFFKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ExchangeOIDCAuthorizationCode' }
+      responses:
+        '200':
+          description: Server-side OIDC tokens for immediate browser-session creation
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OIDCTokenExchange' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+  /oauth/providers/{identityProviderId}:
+    get:
+      summary: Get OIDC browser authorization metadata
+      description: Internal BFF endpoint returning only enabled provider metadata needed to start Authorization Code with PKCE. It never returns client credentials.
+      operationId: getOIDCAuthorizationMetadata
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/IdentityProviderId'
+        - $ref: '#/components/parameters/BFFKey'
+      responses:
+        '200':
+          description: Secret-free browser authorization metadata
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OIDCAuthorizationMetadata' }
+        '401': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /sessions:
+    post:
+      summary: Create a browser session
+      description: Exchanges an independently validated bearer identity and server-side OAuth tokens for an opaque browser session. This endpoint is for the trusted BFF only.
+      operationId: createBrowserSession
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: X-KubeQueue-BFF-Key
+          in: header
+          required: true
+          schema: { type: string, minLength: 32 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateBrowserSession' }
+      responses:
+        '201':
+          description: Rotated browser session
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreatedBrowserSession' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+  /sessions/local:
+    post:
+      summary: Create a browser session from local credentials
+      description: Validates a local human username and password and creates an opaque browser session. This endpoint is available only to the trusted BFF; it never returns the password or a reusable API bearer credential.
+      operationId: createLocalBrowserSession
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/BFFKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateLocalBrowserSession' }
+      responses:
+        '201':
+          description: Rotated browser session
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreatedBrowserSession' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/Error' }
+  /session:
+    get:
+      summary: Get the current browser session
+      description: Returns bounded metadata and the CSRF value for the authenticated browser session.
+      operationId: getBrowserSession
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: Current session metadata and session-bound CSRF value
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BrowserSession' }
+        '401': { $ref: '#/components/responses/Error' }
+    delete:
+      summary: Revoke the current browser session
+      description: Revokes the authenticated browser session after origin and CSRF validation.
+      operationId: revokeBrowserSession
+      security:
+        - sessionAuth: []
+      parameters:
+        - name: Origin
+          in: header
+          required: true
+          schema: { type: string, format: uri }
+        - name: X-CSRF-Token
+          in: header
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 256 }
+      responses:
+        '204': { description: Session revoked }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+  /session/refresh:
+    post:
+      summary: Refresh the current browser session OAuth tokens
+      description: Refreshes provider tokens entirely inside the control plane and returns only bounded session metadata.
+      operationId: refreshBrowserSession
+      security:
+        - sessionAuth: []
+      parameters:
+        - name: Origin
+          in: header
+          required: true
+          schema: { type: string, format: uri }
+        - name: X-CSRF-Token
+          in: header
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 256 }
+      responses:
+        '200':
+          description: Current session metadata after the bounded refresh attempt
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BrowserSessionRefresh' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+  /local-account/password:
+    put:
+      summary: Change the current local account password
+      description: Replaces the authenticated local human's password after verifying the current password, revokes the account's other sessions, and rotates the current session.
+      operationId: changeCurrentLocalAccountPassword
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Origin'
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChangeLocalPassword' }
+      responses:
+        '200':
+          description: Rotated current browser session
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreatedBrowserSession' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/Error' }
+  /principals/{principalId}/local-account/password-reset:
+    post:
+      summary: Reset a local account password
+      description: Allows an installation owner to set a new password for a local human account. The operation is audited, revokes every session for the target account, and never returns the password.
+      operationId: resetLocalAccountPassword
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PrincipalId'
+        - $ref: '#/components/parameters/Origin'
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ResetLocalPassword' }
+      responses:
+        '204': { description: Password reset and target sessions revoked }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/Error' }
+  /setup/status:
+    get:
+      summary: Get bounded first-time setup readiness
+      description: Returns only observable, secret-free readiness and whether guarded setup can still be claimed; it never returns password or credential material.
+      operationId: getSetupStatus
+      security: []
+      responses:
+        '200':
+          description: Secret-free setup availability and observable readiness
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SetupStatus' }
+        '429': { $ref: '#/components/responses/Error' }
+  /setup/claim:
+    post:
+      summary: Claim first-time setup
+      description: Atomically creates the installation, local human installation owner, initial project access, bounded policy, and quota. It is available only while no owner exists; concurrent claims have one winner and a failed claim creates no resources.
+      operationId: claimSetup
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SetupClaimRequest' }
+      responses:
+        '201':
+          description: Setup completed with a local installation owner
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SetupClaim' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '410': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+  /setup/recovery:
+    get:
+      summary: Get the post-setup recovery checklist
+      description: Returns a secret-free operational checklist and completion state; local passwords and break-glass credentials are never included.
+      operationId: getSetupRecovery
+      security: []
+      responses:
+        '200':
+          description: Secret-free recovery checklist
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SetupRecovery' }
+        '429': { $ref: '#/components/responses/Error' }
+  /identity-providers:
+    get:
+      summary: List identity-provider status
+      description: Returns secret-free identity-provider configuration and health status for Settings.
+      operationId: listIdentityProviders
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: Secret-free identity-provider status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IdentityProviderList' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+    post:
+      summary: Configure an OIDC identity provider
+      description: Creates a disabled OIDC provider. Secrets are accepted only as write-only input and are never returned.
+      operationId: createIdentityProvider
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Origin'
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateOIDCIdentityProvider' }
+      responses:
+        '201':
+          description: Disabled secret-free identity-provider configuration
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IdentityProvider' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+  /identity-providers/{identityProviderId}:
+    parameters:
+      - $ref: '#/components/parameters/IdentityProviderId'
+    get:
+      summary: Get identity-provider status
+      description: Returns a secret-free configuration, state, and latest bounded test result.
+      operationId: getIdentityProvider
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: Secret-free identity-provider status
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IdentityProvider' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+    put:
+      summary: Update an OIDC identity provider
+      description: Replaces the non-secret configuration using the current ETag. Omitting clientSecret preserves the stored secret; supplying it rotates the secret. The provider remains disabled until explicitly enabled.
+      operationId: updateIdentityProvider
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/Origin'
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ConfigureOIDCIdentityProvider' }
+      responses:
+        '200':
+          description: Updated secret-free identity-provider configuration
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IdentityProvider' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '412': { $ref: '#/components/responses/PreconditionFailed' }
+        '422': { $ref: '#/components/responses/Error' }
+  /identity-providers/{identityProviderId}/test:
+    post:
+      summary: Test an OIDC identity provider
+      description: Tests discovery, JWKS, issuer, audience, algorithms, and redirect configuration without enabling login, then records only a bounded secret-free result using the current ETag.
+      operationId: testIdentityProvider
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdentityProviderId'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/Origin'
+        - $ref: '#/components/parameters/CSRFToken'
+      responses:
+        '200':
+          description: Updated provider with bounded test result
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IdentityProvider' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '412': { $ref: '#/components/responses/PreconditionFailed' }
+        '422': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+  /identity-providers/{identityProviderId}/enable:
+    post:
+      summary: Enable an OIDC identity provider
+      description: Enables browser login only after a successful current-version test. The transition uses the current ETag and is rejected if no usable installation-owner login would remain.
+      operationId: enableIdentityProvider
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdentityProviderId'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/Origin'
+        - $ref: '#/components/parameters/CSRFToken'
+      responses:
+        '200':
+          description: Enabled identity-provider status
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IdentityProvider' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '412': { $ref: '#/components/responses/PreconditionFailed' }
+  /identity-providers/{identityProviderId}/disable:
+    post:
+      summary: Disable an OIDC identity provider
+      description: Disables browser login using the current ETag. The transition is rejected if it would remove the final enabled login method or the final usable installation-owner login path.
+      operationId: disableIdentityProvider
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdentityProviderId'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/Origin'
+        - $ref: '#/components/parameters/CSRFToken'
+      responses:
+        '200':
+          description: Disabled identity-provider status
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IdentityProvider' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '412': { $ref: '#/components/responses/PreconditionFailed' }
+  /access/me:
+    get:
+      summary: Get the current principal and effective permissions
+      description: Returns the authenticated local principal and effective installation/project permissions.
+      operationId: getCurrentAccess
+      responses:
+        '200':
+          description: Current authenticated principal and bounded effective permission scopes
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CurrentAccess' }
+        '401': { $ref: '#/components/responses/Error' }
+  /projects:
+    get:
+      summary: List projects
+      description: Returns one bounded page of projects in this installation.
+      operationId: listProjects
+      parameters:
+        - { $ref: '#/components/parameters/Cursor' }
+        - { $ref: '#/components/parameters/AccessLimit' }
+      responses:
+        '200':
+          description: Bounded installation project page
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProjectPage' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+    post:
+      summary: Create a project
+      description: Creates one local project with a stable identifier.
+      operationId: createProject
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateProject' }
+      responses:
+        '201':
+          description: Project created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Project' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /projects/{projectId}:
+    parameters:
+      - { $ref: '#/components/parameters/ProjectPathId' }
+    get:
+      summary: Get a project
+      description: Returns one authorized project without enumerating inaccessible identifiers.
+      operationId: getProject
+      responses:
+        '200':
+          description: Project
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Project' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /projects/{projectId}/namespace-bindings:
+    parameters:
+      - { $ref: '#/components/parameters/ProjectPathId' }
+    get:
+      summary: List project namespace bindings
+      description: Returns one bounded page of desired namespace bindings with authority observed by the worker.
+      operationId: listProjectNamespaceBindings
+      parameters:
+        - { $ref: '#/components/parameters/Cursor' }
+        - { $ref: '#/components/parameters/AccessLimit' }
+      responses:
+        '200':
+          description: Bounded namespace-binding page
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NamespaceBindingPage' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      summary: Bind a namespace to a project
+      description: Creates desired local ownership when the namespace is not already bound to a project.
+      operationId: createProjectNamespaceBinding
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateNamespaceBinding' }
+      responses:
+        '201':
+          description: Namespace binding created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NamespaceBinding' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /projects/{projectId}/namespace-bindings/{namespace}:
+    parameters:
+      - { $ref: '#/components/parameters/ProjectPathId' }
+      - name: namespace
+        in: path
+        required: true
+        schema: { type: string, minLength: 1, maxLength: 63 }
+    put:
+      summary: Reassign a namespace to a project
+      description: Reassigns desired ownership only when no active managed workload exists in the namespace.
+      operationId: reassignProjectNamespaceBinding
+      responses:
+        '200':
+          description: Namespace binding reassigned or already assigned
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NamespaceBinding' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+    delete:
+      summary: Remove a project namespace binding
+      description: Removes desired ownership only when the namespace belongs to this project and no active managed workload exists.
+      operationId: removeProjectNamespaceBinding
+      responses:
+        '204': { description: Namespace binding removed }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /projects/{projectId}/queue/order:
+    parameters:
+      - { $ref: '#/components/parameters/ProjectPathId' }
+    put:
+      summary: Reorder a project queue
+      description: Reorders the exact queued set for one project using the global queue version while preserving every other project's relative and absolute positions.
+      operationId: reorderProjectQueue
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReorderQueue' }
+      responses:
+        '200':
+          description: New queue version
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/QueueVersion' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Error' }
+  /installation/admission-policy:
+    get:
+      summary: Get the installation admission policy
+      description: Returns the current direct installation policy fields and immutable version.
+      operationId: getInstallationAdmissionPolicy
+      responses:
+        '200':
+          description: Current versioned installation admission policy
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdmissionPolicy' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      summary: Update the installation admission policy
+      operationId: updateInstallationAdmissionPolicy
+      description: Creates the next immutable policy version using the current strong ETag.
+      parameters:
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateAdmissionPolicy' }
+      responses:
+        '200':
+          description: Updated installation admission policy
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdmissionPolicy' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '412': { $ref: '#/components/responses/PreconditionFailed' }
+  /projects/{projectId}/admission-settings:
+    parameters:
+      - { $ref: '#/components/parameters/ProjectPathId' }
+    get:
+      summary: Get project admission settings
+      operationId: getProjectAdmissionSettings
+      description: Returns the direct project policy overlay and positive fair-scheduling weight.
+      responses:
+        '200':
+          description: Current project admission settings
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProjectAdmissionSettings' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      summary: Update project admission settings
+      operationId: updateProjectAdmissionSettings
+      description: Atomically creates the next project policy version, updates scheduling weight, and appends audit using the current strong ETag.
+      parameters:
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateProjectAdmissionSettings' }
+      responses:
+        '200':
+          description: Updated project admission settings
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProjectAdmissionSettings' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '412': { $ref: '#/components/responses/PreconditionFailed' }
+  /projects/{projectId}/quota-usage:
+    parameters:
+      - { $ref: '#/components/parameters/ProjectPathId' }
+    get:
+      summary: Get current project quota usage
+      description: Returns the current project-level concurrent, queued, and retained counters.
+      operationId: getProjectQuotaUsage
+      responses:
+        '200':
+          description: Current bounded project counters
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/QuotaCounters' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /projects/{projectId}/admission-decisions:
+    parameters:
+      - { $ref: '#/components/parameters/ProjectPathId' }
+    get:
+      summary: List recent project admission decisions
+      operationId: listProjectAdmissionDecisions
+      description: Returns newest-first accepted decisions and current bounded rejection reasons.
+      parameters:
+        - { $ref: '#/components/parameters/AdmissionCursor' }
+        - { $ref: '#/components/parameters/AccessLimit' }
+      responses:
+        '200':
+          description: Bounded admission decision page
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdmissionDecisionPage' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /teams:
+    get:
+      summary: List teams
+      description: Returns one bounded page of local installation teams.
+      operationId: listTeams
+      parameters:
+        - { $ref: '#/components/parameters/Cursor' }
+        - { $ref: '#/components/parameters/AccessLimit' }
+      responses:
+        '200':
+          description: Bounded installation team page
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TeamPage' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+    post:
+      summary: Create a team
+      description: Creates one local team with a stable identifier.
+      operationId: createTeam
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateTeam' }
+      responses:
+        '201':
+          description: Team created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Team' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /teams/{teamId}:
+    parameters:
+      - { $ref: '#/components/parameters/TeamId' }
+    get:
+      summary: Get a team
+      description: Returns one team in this installation.
+      operationId: getTeam
+      responses:
+        '200':
+          description: Team
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Team' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /teams/{teamId}/memberships:
+    parameters:
+      - { $ref: '#/components/parameters/TeamId' }
+    get:
+      summary: List team memberships
+      description: Returns one bounded page of manual and OIDC-managed team memberships.
+      operationId: listTeamMemberships
+      parameters:
+        - { $ref: '#/components/parameters/Cursor' }
+        - { $ref: '#/components/parameters/AccessLimit' }
+      responses:
+        '200':
+          description: Bounded membership page
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TeamMembershipPage' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      summary: Add a manual team membership
+      description: Adds an existing local principal to the team without changing OIDC-managed membership.
+      operationId: createTeamMembership
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateTeamMembership' }
+      responses:
+        '201':
+          description: Membership created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TeamMembership' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /teams/{teamId}/memberships/{principalId}:
+    parameters:
+      - { $ref: '#/components/parameters/TeamId' }
+      - { $ref: '#/components/parameters/PrincipalId' }
+    get:
+      summary: Get a team membership
+      description: Returns one principal membership in the selected team.
+      operationId: getTeamMembership
+      responses:
+        '200':
+          description: Team membership
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TeamMembership' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      summary: Remove a manual team membership
+      description: Removes a manual membership while preserving owner and OIDC-managed invariants.
+      operationId: deleteTeamMembership
+      responses:
+        '204': { description: Membership removed }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /access/effective-grants:
+    get:
+      summary: List effective grants for one local principal
+      description: Resolves direct and inherited team grants for one known local principal.
+      operationId: listEffectiveGrants
+      parameters:
+        - { $ref: '#/components/parameters/Cursor' }
+        - { $ref: '#/components/parameters/AccessLimit' }
+        - name: principalId
+          in: query
+          required: true
+          schema: { $ref: '#/components/schemas/StableId' }
+      responses:
+        '200':
+          description: Bounded effective-grant page
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EffectiveGrantPage' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /role-definitions:
+    get:
+      summary: List built-in and custom role definitions
+      description: Returns one bounded page from the fixed built-in and installation-defined role set.
+      operationId: listRoleDefinitions
+      parameters:
+        - { $ref: '#/components/parameters/Cursor' }
+        - { $ref: '#/components/parameters/AccessLimit' }
+      responses:
+        '200':
+          description: Bounded role-definition page
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RoleDefinitionPage' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+    post:
+      summary: Create a custom role definition
+      description: Creates revision 1 after applying the creator delegation ceiling.
+      operationId: createRoleDefinition
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateRoleDefinition' }
+      responses:
+        '201':
+          description: Custom role definition at revision 1
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RoleDefinition' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /role-definitions/{roleDefinitionId}:
+    parameters:
+      - { $ref: '#/components/parameters/RoleDefinitionId' }
+    get:
+      summary: Get a role definition
+      description: Returns one built-in or custom role definition.
+      operationId: getRoleDefinition
+      responses:
+        '200':
+          description: Role definition; custom-role ETag is its quoted revision
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RoleDefinition' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      summary: Create the next custom-role revision
+      operationId: updateRoleDefinition
+      description: Requires the quoted current revision in If-Match. Built-in roles cannot be updated.
+      parameters:
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateRoleDefinition' }
+      responses:
+        '200':
+          description: Next custom-role revision
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RoleDefinition' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '412': { $ref: '#/components/responses/PreconditionFailed' }
+  /role-bindings:
+    get:
+      summary: List role bindings
+      description: Returns one bounded page of installation/project role assignments.
+      operationId: listRoleBindings
+      parameters:
+        - { $ref: '#/components/parameters/Cursor' }
+        - { $ref: '#/components/parameters/AccessLimit' }
+      responses:
+        '200':
+          description: Bounded role-binding page
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RoleBindingPage' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+    post:
+      summary: Create a role binding
+      description: Assigns one role to one principal or team at one installation/project scope.
+      operationId: createRoleBinding
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateRoleBinding' }
+      responses:
+        '201':
+          description: Role binding created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RoleBinding' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /role-bindings/{roleBindingId}:
+    parameters:
+      - { $ref: '#/components/parameters/RoleBindingId' }
+    get:
+      summary: Get a role binding
+      description: Returns one role assignment.
+      operationId: getRoleBinding
+      responses:
+        '200':
+          description: Role binding
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RoleBinding' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      summary: Delete a role binding
+      description: Removes one role assignment while preserving the final installation owner.
+      operationId: deleteRoleBinding
+      responses:
+        '204': { description: Role binding deleted }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /service-accounts:
+    get:
+      summary: List service accounts
+      description: Returns one bounded page of local service accounts without credential material.
+      operationId: listServiceAccounts
+      parameters:
+        - { $ref: '#/components/parameters/Cursor' }
+        - { $ref: '#/components/parameters/AccessLimit' }
+      responses:
+        '200':
+          description: Bounded service-account page without credentials
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ServiceAccountPage' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+    post:
+      summary: Create a service account
+      description: Creates one installation- or project-scoped non-interactive principal.
+      operationId: createServiceAccount
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateServiceAccount' }
+      responses:
+        '201':
+          description: Service account created without a credential
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ServiceAccount' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /service-accounts/{serviceAccountId}:
+    parameters:
+      - { $ref: '#/components/parameters/ServiceAccountId' }
+    get:
+      summary: Get a service account
+      description: Returns one service account without credential material.
+      operationId: getServiceAccount
+      responses:
+        '200':
+          description: Service account without credential material
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ServiceAccount' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /service-accounts/{serviceAccountId}/oidc-identity:
+    parameters:
+      - { $ref: '#/components/parameters/ServiceAccountId' }
+    put:
+      summary: Bind an OIDC client identity
+      description: Binds one exact configured issuer and immutable subject to an existing service account. No client secret is stored.
+      operationId: bindServiceAccountOIDCIdentity
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BindServiceAccountOIDCIdentity' }
+      responses:
+        '200':
+          description: Service account with its OIDC identity binding
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ServiceAccount' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+    delete:
+      summary: Remove an OIDC client identity binding
+      description: Removes the service account's OIDC client-credentials identity without changing native credentials.
+      operationId: removeServiceAccountOIDCIdentity
+      responses:
+        '204': { description: OIDC identity binding removed }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /service-accounts/{serviceAccountId}/credentials:
+    parameters:
+      - { $ref: '#/components/parameters/ServiceAccountId' }
+    get:
+      summary: List service-account credential metadata
+      description: Returns bounded prefixes and lifecycle metadata, never plaintext tokens or digests.
+      operationId: listServiceAccountCredentials
+      parameters:
+        - { $ref: '#/components/parameters/CredentialCursor' }
+        - { $ref: '#/components/parameters/AccessLimit' }
+      responses:
+        '200':
+          description: Bounded non-secret credential metadata page
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ServiceAccountCredentialPage' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      summary: Issue a one-time service-account credential
+      description: Creates a bounded credential and returns its plaintext exactly once.
+      operationId: issueServiceAccountCredential
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IssueServiceAccountCredential' }
+      responses:
+        '201':
+          description: Credential metadata and plaintext token returned exactly once
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IssuedServiceAccountCredential' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /service-accounts/{serviceAccountId}/credentials/{credentialId}/rotate:
+    parameters:
+      - { $ref: '#/components/parameters/ServiceAccountId' }
+      - { $ref: '#/components/parameters/CredentialId' }
+    post:
+      summary: Rotate a service-account credential
+      operationId: rotateServiceAccountCredential
+      description: Rotates once; callers must not automatically retry an unknown outcome because plaintext is not recoverable.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RotateServiceAccountCredential' }
+      responses:
+        '201':
+          description: Replacement metadata and plaintext token returned exactly once
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RotatedServiceAccountCredential' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /service-accounts/{serviceAccountId}/credentials/{credentialId}:
+    parameters:
+      - { $ref: '#/components/parameters/ServiceAccountId' }
+      - { $ref: '#/components/parameters/CredentialId' }
+    get:
+      summary: Get service-account credential metadata
+      description: Returns one credential's non-secret lifecycle metadata.
+      operationId: getServiceAccountCredential
+      responses:
+        '200':
+          description: Credential metadata without plaintext or digest
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ServiceAccountCredential' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      summary: Revoke a service-account credential
+      description: Idempotently revokes one credential.
+      operationId: revokeServiceAccountCredential
+      responses:
+        '204': { description: Credential revoked or already revoked }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /audit/events:
+    get:
+      summary: Search local audit events
+      description: Returns one bounded page from the customer-operated local audit record in stable occurredAt then id order. Inaccessible project scope returns an empty page.
+      operationId: searchAuditEvents
+      parameters:
+        - { $ref: '#/components/parameters/AuditInstallationId' }
+        - { $ref: '#/components/parameters/AuditProjectId' }
+        - { $ref: '#/components/parameters/AuditAction' }
+        - { $ref: '#/components/parameters/AuditDecision' }
+        - { $ref: '#/components/parameters/AuditResult' }
+        - { $ref: '#/components/parameters/AuditOccurredFrom' }
+        - { $ref: '#/components/parameters/AuditOccurredTo' }
+        - { $ref: '#/components/parameters/AuditLimit' }
+        - { $ref: '#/components/parameters/AuditCursor' }
+      responses:
+        '200':
+          description: Authorized audit events in deterministic keyset order
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuditEventPage' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+  /audit/events/{auditEventId}:
+    parameters:
+      - { $ref: '#/components/parameters/AuditEventId' }
+      - { $ref: '#/components/parameters/AuditInstallationId' }
+    get:
+      summary: Get a local audit event
+      description: Returns one event only when it exists in the caller's authorized installation and project scope; all other cases return the same not-found response.
+      operationId: getAuditEvent
+      responses:
+        '200':
+          description: Authorized local audit event
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuditEvent' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /audit/export:
+    get:
+      summary: Export local audit events
+      description: Returns an ordered bounded page from the local audit record for customer-owned export tooling. Follow nextCursor until null while preserving the same filters.
+      operationId: exportAuditEvents
+      parameters:
+        - { $ref: '#/components/parameters/AuditInstallationId' }
+        - { $ref: '#/components/parameters/AuditProjectId' }
+        - { $ref: '#/components/parameters/AuditAction' }
+        - { $ref: '#/components/parameters/AuditDecision' }
+        - { $ref: '#/components/parameters/AuditResult' }
+        - { $ref: '#/components/parameters/AuditOccurredFrom' }
+        - { $ref: '#/components/parameters/AuditOccurredTo' }
+        - { $ref: '#/components/parameters/AuditLimit' }
+        - { $ref: '#/components/parameters/AuditCursor' }
+      responses:
+        '200':
+          description: Export page in stable occurredAt then id order
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuditEventPage' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
   /system/status:
     get:
       summary: Get control-plane status
@@ -25,31 +1293,68 @@ paths:
               schema: { $ref: '#/components/schemas/SystemStatus' }
         '401': { $ref: '#/components/responses/Error' }
         '503': { $ref: '#/components/responses/Error' }
+  /support/diagnostics:
+    get:
+      summary: Get sanitized local support diagnostics
+      description: Returns a bounded, structurally redacted local diagnostic snapshot without credentials, connection strings, manifests, environment values, or raw errors.
+      operationId: getSupportDiagnostics
+      responses:
+        '200':
+          description: Sanitized local diagnostic snapshot
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SupportDiagnostics' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
   /jobs:
     get:
       summary: List jobs
-      description: Returns jobs matching the supplied inventory filters.
+      description: Returns one bounded page of jobs matching the supplied inventory filters. Cursors are opaque and valid only with the same filters and sort.
       operationId: listJobs
       parameters:
         - { $ref: '#/components/parameters/Status' }
         - { $ref: '#/components/parameters/Namespace' }
         - { $ref: '#/components/parameters/Team' }
         - { $ref: '#/components/parameters/Priority' }
+        - { $ref: '#/components/parameters/ProjectId' }
+        - { $ref: '#/components/parameters/Synchronization' }
+        - { $ref: '#/components/parameters/CreatedAfter' }
+        - { $ref: '#/components/parameters/CreatedBefore' }
+        - { $ref: '#/components/parameters/UpdatedAfter' }
+        - { $ref: '#/components/parameters/UpdatedBefore' }
         - name: search
           in: query
-          schema: { type: string }
+          description: Whitespace-normalized, case-insensitive job name search.
+          schema: { type: string, maxLength: 200 }
+        - name: sort
+          in: query
+          description: Stable allowlisted ordering. Queue preserves the default queue ordering.
+          schema:
+            type: string
+            enum: [queue, createdAt, -createdAt, updatedAt, -updatedAt, name, -name]
+            default: queue
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+        - name: cursor
+          in: query
+          description: Opaque continuation token returned by the previous page.
+          schema: { type: string, maxLength: 2048 }
       responses:
         '200':
-          description: Matching jobs
+          description: Matching jobs in deterministic keyset order
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/JobList' }
+              schema: { $ref: '#/components/schemas/JobPage' }
         '400': { $ref: '#/components/responses/Error' }
         '401': { $ref: '#/components/responses/Error' }
     post:
       summary: Submit a job
-      description: Persists a standard Kubernetes Job template for queued execution.
+      description: Persists a standard Kubernetes Job template for queued execution. Reusing the same bounded idempotency key with the same intent returns the original Job; reusing it for different intent is rejected.
       operationId: createJob
+      parameters:
+        - { $ref: '#/components/parameters/IdempotencyKey' }
       requestBody:
         required: true
         content:
@@ -63,15 +1368,16 @@ paths:
               schema: { $ref: '#/components/schemas/Job' }
         '400': { $ref: '#/components/responses/Error' }
         '401': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/Error' }
   /jobs/facets:
     get:
       summary: Get job inventory facets
-      description: Returns global inventory counts and filter values independently from active filters.
+      description: Returns authorized inventory counts and bounded filter values independently from active filters.
       operationId: getJobFacets
       responses:
         '200':
-          description: Global job inventory facets
+          description: Authorized job inventory facets
           content:
             application/json:
               schema: { $ref: '#/components/schemas/JobFacets' }
@@ -103,25 +1409,44 @@ paths:
         '401': { $ref: '#/components/responses/Error' }
         '404': { $ref: '#/components/responses/Error' }
         '409': { $ref: '#/components/responses/Error' }
+  /jobs/{jobId}/manifest:
+    parameters:
+      - { $ref: '#/components/parameters/JobId' }
+    get:
+      summary: Get a job manifest
+      description: Returns the stored Kubernetes Job template when the caller has independent manifest access.
+      operationId: getJobManifest
+      responses:
+        '200':
+          description: Stored Job manifest
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/JobManifest' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
   /jobs/{jobId}/events:
     parameters:
       - { $ref: '#/components/parameters/JobId' }
     get:
       summary: List job events
-      description: Returns immutable lifecycle events for one job.
+      description: Returns one newest-first page of immutable lifecycle events for one job. Cursors are opaque, job-specific continuation tokens.
       operationId: listJobEvents
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+        - name: cursor
+          in: query
+          description: Opaque continuation token returned by the previous page.
+          schema: { type: string, maxLength: 2048 }
       responses:
         '200':
-          description: Immutable lifecycle history
+          description: Newest-first immutable lifecycle history
           content:
             application/json:
-              schema:
-                type: object
-                required: [items]
-                properties:
-                  items:
-                    type: array
-                    items: { $ref: '#/components/schemas/JobEvent' }
+              schema: { $ref: '#/components/schemas/JobEventPage' }
+        '400': { $ref: '#/components/responses/Error' }
         '401': { $ref: '#/components/responses/Error' }
         '404': { $ref: '#/components/responses/Error' }
   /jobs/{jobId}/actions/{action}:
@@ -185,26 +1510,13 @@ paths:
         required: true
         content:
           application/json:
-            schema:
-              type: object
-              required: [jobIds, version]
-              properties:
-                jobIds:
-                  type: array
-                  minItems: 1
-                  uniqueItems: true
-                  items: { type: string, format: uuid }
-                version: { type: integer, minimum: 0 }
+            schema: { $ref: '#/components/schemas/ReorderQueue' }
       responses:
         '200':
           description: New queue version
           content:
             application/json:
-              schema:
-                type: object
-                required: [version]
-                properties:
-                  version: { type: integer }
+              schema: { $ref: '#/components/schemas/QueueVersion' }
         '400': { $ref: '#/components/responses/Error' }
         '401': { $ref: '#/components/responses/Error' }
         '409': { $ref: '#/components/responses/Error' }
@@ -223,21 +1535,139 @@ paths:
   /events:
     get:
       summary: Stream job changes
-      description: Streams job inventory snapshots as server-sent events.
+      description: |
+        Streams authorization-scoped job invalidations as server-sent events. Every message uses
+        the `jobs` event name and a decimal event ID equal to its cursor. The first message is a
+        `ready` payload. Without `Last-Event-ID`, its cursor is the latest authorized change and
+        only later changes are emitted. With `Last-Event-ID`, changes after that cursor are replayed.
+        An `invalidate` payload contains the unique job IDs changed in a bounded backend page;
+        clients refetch affected resources and persist its cursor for reconnection.
       operationId: streamEvents
+      parameters:
+        - name: Last-Event-ID
+          in: header
+          description: Non-negative decimal cursor from the last processed SSE message.
+          schema: { type: string }
       responses:
         '200':
-          description: Server-sent job snapshots
+          description: |
+            SSE stream of `jobs` events. Each `data` value is either
+            `{"type":"ready","cursor":0}` or
+            `{"type":"invalidate","jobIds":["<job UUID>"],"cursor":1}` with current values.
           content:
             text/event-stream:
               schema: { type: string }
+        '400': { $ref: '#/components/responses/Error' }
         '401': { $ref: '#/components/responses/Error' }
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
+    sessionAuth:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: Opaque `Session <credential>` supplied only by the trusted BFF.
+  headers:
+    ETag:
+      description: Strong opaque concurrency token for the returned representation.
+      schema: { type: string, minLength: 3, maxLength: 128 }
+    RequestId:
+      description: Bounded request correlation identifier accepted from X-Request-ID when valid, otherwise generated by the API.
+      schema: { $ref: '#/components/schemas/RequestId' }
   parameters:
+    BFFKey:
+      name: X-KubeQueue-BFF-Key
+      in: header
+      required: true
+      description: Installation-internal credential accepted only from the trusted BFF.
+      schema: { type: string, minLength: 32, writeOnly: true }
+    Origin:
+      name: Origin
+      in: header
+      required: true
+      schema: { type: string, format: uri }
+    CSRFToken:
+      name: X-CSRF-Token
+      in: header
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 256 }
+    Cursor:
+      name: cursor
+      in: query
+      description: Stable resource ID after which the next page begins.
+      schema: { $ref: '#/components/schemas/StableId' }
+    AccessLimit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+    CredentialCursor:
+      name: cursor
+      in: query
+      description: Stable credential UUID after which the next page begins.
+      schema: { type: string, format: uuid }
+    IfMatch:
+      name: If-Match
+      in: header
+      required: true
+      description: Strong ETag returned by the latest GET. Wildcards and weak validators are rejected.
+      schema: { type: string, pattern: '^"[^"]+"$', maxLength: 128 }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: Optional caller-generated key scoped to Job creation by the authenticated principal. The API generates a non-replayable key when omitted.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+        pattern: '^[A-Za-z0-9][A-Za-z0-9._:@/-]*$'
+    AdmissionCursor:
+      name: cursor
+      in: query
+      description: Opaque newest-first admission-decision continuation token.
+      schema: { type: string, maxLength: 512 }
+    ProjectPathId:
+      name: projectId
+      in: path
+      required: true
+      schema: { $ref: '#/components/schemas/StableId' }
+    TeamId:
+      name: teamId
+      in: path
+      required: true
+      schema: { $ref: '#/components/schemas/StableId' }
+    PrincipalId:
+      name: principalId
+      in: path
+      required: true
+      schema: { $ref: '#/components/schemas/StableId' }
+    IdentityProviderId:
+      name: identityProviderId
+      in: path
+      required: true
+      schema: { type: string, pattern: '^[a-z][a-z0-9_]{0,62}$' }
+    RoleDefinitionId:
+      name: roleDefinitionId
+      in: path
+      required: true
+      schema: { $ref: '#/components/schemas/StableId' }
+    RoleBindingId:
+      name: roleBindingId
+      in: path
+      required: true
+      schema: { $ref: '#/components/schemas/StableId' }
+    ServiceAccountId:
+      name: serviceAccountId
+      in: path
+      required: true
+      schema: { $ref: '#/components/schemas/StableId' }
+    CredentialId:
+      name: credentialId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
     JobId:
       name: jobId
       in: path
@@ -259,13 +1689,1209 @@ components:
       name: priority
       in: query
       schema: { type: integer, minimum: -1000, maximum: 1000 }
+    ProjectId:
+      name: projectId
+      in: query
+      description: Restricts results to one authorized project. An inaccessible project returns an empty page.
+      schema: { type: string, maxLength: 128 }
+    Synchronization:
+      name: synchronization
+      in: query
+      description: Restricts results to one durable Kubernetes synchronization status.
+      schema: { $ref: '#/components/schemas/SynchronizationStatus' }
+    CreatedAfter:
+      name: createdAfter
+      in: query
+      description: Includes jobs created at or after this RFC 3339 timestamp.
+      schema: { type: string, format: date-time }
+    CreatedBefore:
+      name: createdBefore
+      in: query
+      description: Includes jobs created before this RFC 3339 timestamp.
+      schema: { type: string, format: date-time }
+    UpdatedAfter:
+      name: updatedAfter
+      in: query
+      description: Includes jobs updated at or after this RFC 3339 timestamp.
+      schema: { type: string, format: date-time }
+    UpdatedBefore:
+      name: updatedBefore
+      in: query
+      description: Includes jobs updated before this RFC 3339 timestamp.
+      schema: { type: string, format: date-time }
+    AuditEventId:
+      name: auditEventId
+      in: path
+      required: true
+      schema: { $ref: '#/components/schemas/AuditIdentifier' }
+    AuditInstallationId:
+      name: installationId
+      in: query
+      required: true
+      description: Customer-operated installation whose local audit record is queried.
+      schema: { $ref: '#/components/schemas/AuditIdentifier' }
+    AuditProjectId:
+      name: projectId
+      in: query
+      description: Restricts results to one authorized project. Inaccessible project scope returns no events.
+      schema: { $ref: '#/components/schemas/AuditIdentifier' }
+    AuditAction:
+      name: action
+      in: query
+      schema:
+        {
+          type: string,
+          minLength: 1,
+          maxLength: 96,
+          pattern: '^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$',
+        }
+    AuditDecision:
+      name: decision
+      in: query
+      schema: { $ref: '#/components/schemas/AuditAuthorizationDecision' }
+    AuditResult:
+      name: result
+      in: query
+      schema: { $ref: '#/components/schemas/AuditResult' }
+    AuditOccurredFrom:
+      name: occurredFrom
+      in: query
+      description: Includes events occurring at or after this RFC 3339 timestamp.
+      schema: { type: string, format: date-time }
+    AuditOccurredTo:
+      name: occurredTo
+      in: query
+      description: Includes events occurring before this RFC 3339 timestamp.
+      schema: { type: string, format: date-time }
+    AuditLimit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+    AuditCursor:
+      name: cursor
+      in: query
+      description: Opaque continuation token preserving the stable occurredAt and id keyset. It is valid only with the same filters.
+      schema: { type: string, maxLength: 512 }
   responses:
     Error:
       description: Request failed
+      headers:
+        X-Request-ID: { $ref: '#/components/headers/RequestId' }
       content:
         application/json:
           schema: { $ref: '#/components/schemas/ErrorResponse' }
+    NotFound:
+      description: The resource is absent or not visible in the authorized scope.
+      headers:
+        X-Request-ID: { $ref: '#/components/headers/RequestId' }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+          example:
+            requestId: 550e8400-e29b-41d4-a716-446655440000
+            error:
+              { code: RESOURCE_NOT_FOUND, message: Resource not found, status: 404, details: {} }
+    Conflict:
+      description: The requested state conflicts with an existing resource or protected invariant.
+      headers:
+        X-Request-ID: { $ref: '#/components/headers/RequestId' }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+          example:
+            requestId: 550e8400-e29b-41d4-a716-446655440000
+            error: { code: RESOURCE_CONFLICT, message: Resource conflict, status: 409, details: {} }
+    PreconditionFailed:
+      description: If-Match does not identify the current resource representation.
+      headers:
+        X-Request-ID: { $ref: '#/components/headers/RequestId' }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+          example:
+            requestId: 550e8400-e29b-41d4-a716-446655440000
+            error:
+              { code: PRECONDITION_FAILED, message: Resource changed, status: 412, details: {} }
   schemas:
+    RequestId:
+      type: string
+      minLength: 1
+      maxLength: 128
+      pattern: '^[A-Za-z0-9][A-Za-z0-9._:@/-]*$'
+    StableId:
+      type: string
+      pattern: '^[a-z][a-z0-9_]{0,62}$'
+    AuditIdentifier:
+      type: string
+      minLength: 1
+      maxLength: 128
+      pattern: '^[A-Za-z0-9][A-Za-z0-9._:@/-]*$'
+    AuditAuthorizationDecision:
+      type: string
+      enum: [ALLOW, DENY]
+    AuditResult:
+      type: string
+      enum: [SUCCESS, FAILURE]
+    AuditAuthenticationMethod:
+      type: string
+      enum:
+        [OIDC_CLIENT_CREDENTIALS, OIDC_SESSION, SERVICE_ACCOUNT_TOKEN, BREAK_GLASS, LEGACY_TOKEN]
+    AuditSourceProvenance:
+      type: string
+      enum: [DIRECT_PEER, TRUSTED_PROXY]
+    AuditActor:
+      type: object
+      additionalProperties: false
+      required: [principalId, authenticationMethod, credentialId, effectiveGroups]
+      properties:
+        principalId: { $ref: '#/components/schemas/AuditIdentifier' }
+        authenticationMethod: { $ref: '#/components/schemas/AuditAuthenticationMethod' }
+        credentialId: { $ref: '#/components/schemas/AuditIdentifier' }
+        effectiveGroups:
+          type: array
+          maxItems: 64
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/AuditIdentifier' }
+    AuditTarget:
+      type: object
+      additionalProperties: false
+      required: [type, id]
+      properties:
+        type: { type: string, minLength: 1, maxLength: 64 }
+        id: { $ref: '#/components/schemas/AuditIdentifier' }
+    AuditScope:
+      type: object
+      additionalProperties: false
+      required: [installationId]
+      properties:
+        installationId: { $ref: '#/components/schemas/AuditIdentifier' }
+        projectId: { $ref: '#/components/schemas/AuditIdentifier' }
+        teamId: { $ref: '#/components/schemas/AuditIdentifier' }
+        namespace: { type: string, minLength: 1, maxLength: 63 }
+    AuditSource:
+      type: object
+      additionalProperties: false
+      required: [address, provenance, userAgent]
+      properties:
+        address: { type: string, minLength: 2, maxLength: 45 }
+        provenance: { $ref: '#/components/schemas/AuditSourceProvenance' }
+        userAgent: { type: string, maxLength: 512 }
+    AuditSummary:
+      type: object
+      additionalProperties: false
+      required: [changedFields, redactionCount, truncated]
+      properties:
+        state: { type: string, maxLength: 64, pattern: '^[A-Z][A-Z0-9_]{0,63}$' }
+        changedFields:
+          type: array
+          maxItems: 64
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 128 }
+        redactionCount: { type: integer, minimum: 0, maximum: 65535 }
+        truncated: { type: boolean }
+    AuditEvent:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          id,
+          occurredAt,
+          requestId,
+          traceId,
+          actor,
+          action,
+          target,
+          scope,
+          decision,
+          result,
+          reason,
+          source,
+        ]
+      properties:
+        id: { $ref: '#/components/schemas/AuditIdentifier' }
+        occurredAt: { type: string, format: date-time }
+        requestId: { $ref: '#/components/schemas/AuditIdentifier' }
+        traceId: { $ref: '#/components/schemas/AuditIdentifier' }
+        actor: { $ref: '#/components/schemas/AuditActor' }
+        action: { type: string, minLength: 1, maxLength: 96 }
+        target: { $ref: '#/components/schemas/AuditTarget' }
+        scope: { $ref: '#/components/schemas/AuditScope' }
+        decision: { $ref: '#/components/schemas/AuditAuthorizationDecision' }
+        result: { $ref: '#/components/schemas/AuditResult' }
+        reason: { type: string, minLength: 1, maxLength: 96 }
+        source: { $ref: '#/components/schemas/AuditSource' }
+        before: { $ref: '#/components/schemas/AuditSummary' }
+        after: { $ref: '#/components/schemas/AuditSummary' }
+    AuditEventPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          maxItems: 200
+          items: { $ref: '#/components/schemas/AuditEvent' }
+        nextCursor:
+          type: [string, 'null']
+          maxLength: 512
+    AccessScopeType:
+      type: string
+      enum: [INSTALLATION, PROJECT]
+    Permission:
+      type: string
+      enum:
+        [
+          jobs.list,
+          jobs.read,
+          jobs.manifest.read,
+          jobs.submit,
+          jobs.pause,
+          jobs.resume,
+          jobs.terminate,
+          jobs.retry,
+          jobs.take-control,
+          jobs.archive,
+          job-events.read,
+          events.stream.read,
+          queue.read,
+          queue.entry.update,
+          queue.project.reorder,
+          queue.global.reorder,
+          projects.manage,
+          namespace-bindings.manage,
+          members.read,
+          members.manage,
+          roles.read,
+          roles.assign,
+          roles.define,
+          service-accounts.manage,
+          tokens.manage,
+          policies.read,
+          policies.manage,
+          quotas.manage,
+          audit.read,
+          audit.export,
+          system.status.read,
+          support.diagnostics.read,
+        ]
+    PrincipalKind:
+      type: string
+      enum: [HUMAN, SERVICE_ACCOUNT, LEGACY_ADMIN]
+    PrincipalStatus:
+      type: string
+      enum: [ACTIVE, DISABLED]
+    PrincipalSummary:
+      type: object
+      additionalProperties: false
+      required: [id, kind, displayName, status]
+      properties:
+        id: { $ref: '#/components/schemas/StableId' }
+        kind: { $ref: '#/components/schemas/PrincipalKind' }
+        displayName: { type: string, minLength: 1, maxLength: 128 }
+        status: { $ref: '#/components/schemas/PrincipalStatus' }
+    EffectivePermission:
+      type: object
+      additionalProperties: false
+      required: [permission, scopeType]
+      properties:
+        permission: { $ref: '#/components/schemas/Permission' }
+        scopeType: { $ref: '#/components/schemas/AccessScopeType' }
+        projectId: { $ref: '#/components/schemas/StableId' }
+    CurrentAccess:
+      type: object
+      additionalProperties: false
+      required: [installationId, principal, installationOwner, permissions]
+      properties:
+        installationId: { $ref: '#/components/schemas/StableId' }
+        principal: { $ref: '#/components/schemas/PrincipalSummary' }
+        installationOwner:
+          type: boolean
+          description: Whether the built-in installation-owner grant applies.
+        permissions:
+          type: array
+          maxItems: 1000
+          items: { $ref: '#/components/schemas/EffectivePermission' }
+    CursorPage:
+      type: object
+      required: [nextCursor]
+      properties:
+        nextCursor:
+          oneOf:
+            - { $ref: '#/components/schemas/StableId' }
+            - { type: 'null' }
+    CredentialCursorPage:
+      type: object
+      required: [nextCursor]
+      properties:
+        nextCursor:
+          type: [string, 'null']
+          format: uuid
+    Project:
+      type: object
+      additionalProperties: false
+      required: [id, installationId, name, createdAt]
+      properties:
+        id: { $ref: '#/components/schemas/StableId' }
+        installationId: { $ref: '#/components/schemas/StableId' }
+        name: { type: string, minLength: 1, maxLength: 128 }
+        createdAt: { type: string, format: date-time }
+    NamespaceAuthorityState:
+      type: string
+      enum: [READY, PENDING, UNAUTHORIZED, UNSYNCHRONIZED, OUT_OF_SCOPE]
+    NamespaceBinding:
+      type: object
+      additionalProperties: false
+      required:
+        [id, projectId, namespace, desired, authorityState, informerSynced, authorized, createdAt]
+      properties:
+        id: { type: string, minLength: 1, maxLength: 191 }
+        projectId: { $ref: '#/components/schemas/StableId' }
+        namespace: { type: string, minLength: 1, maxLength: 63 }
+        desired: { type: boolean, description: True while local project ownership is requested. }
+        authorityState: { $ref: '#/components/schemas/NamespaceAuthorityState' }
+        informerSynced: { type: boolean }
+        authorized: { type: boolean }
+        message: { type: string, maxLength: 512 }
+        observedAt: { type: [string, 'null'], format: date-time }
+        createdAt: { type: string, format: date-time }
+    CreateNamespaceBinding:
+      type: object
+      additionalProperties: false
+      required: [namespace]
+      properties:
+        namespace: { type: string, minLength: 1, maxLength: 63 }
+    NamespaceBindingPage:
+      allOf:
+        - { $ref: '#/components/schemas/CursorPage' }
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              maxItems: 200
+              items: { $ref: '#/components/schemas/NamespaceBinding' }
+    ReorderQueue:
+      type: object
+      additionalProperties: false
+      required: [jobIds, version]
+      properties:
+        jobIds:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: string, format: uuid }
+        version: { type: integer, minimum: 0 }
+    QueueVersion:
+      type: object
+      additionalProperties: false
+      required: [version]
+      properties:
+        version: { type: integer, minimum: 0 }
+    QuotaLimit:
+      type: object
+      additionalProperties: false
+      properties:
+        maxConcurrent: { type: integer, minimum: 0 }
+        maxQueued: { type: integer, minimum: 0 }
+        maxRetained: { type: integer, minimum: 0 }
+    AdmissionQuotaLimits:
+      type: object
+      additionalProperties: false
+      properties:
+        global: { $ref: '#/components/schemas/QuotaLimit' }
+        project: { $ref: '#/components/schemas/QuotaLimit' }
+        namespace: { $ref: '#/components/schemas/QuotaLimit' }
+    AdmissionPriority:
+      type: object
+      additionalProperties: false
+      required: [min, max, default]
+      properties:
+        min: { type: integer, minimum: -1000, maximum: 1000 }
+        max: { type: integer, minimum: -1000, maximum: 1000 }
+        default: { type: integer, minimum: -1000, maximum: 1000 }
+    AdmissionPolicyRules:
+      type: object
+      additionalProperties: false
+      properties:
+        quotas: { $ref: '#/components/schemas/AdmissionQuotaLimits' }
+        priority: { $ref: '#/components/schemas/AdmissionPriority' }
+        maxDelayedStartSeconds: { type: integer, minimum: 1 }
+        maxExecutionDurationSeconds: { type: integer, minimum: 1 }
+        allowedImageRegistries:
+          type: array
+          maxItems: 256
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 253 }
+    AdmissionPolicy:
+      type: object
+      additionalProperties: false
+      required: [id, version, scopeType, rules]
+      properties:
+        id: { type: string, minLength: 1, maxLength: 128 }
+        version: { type: integer, minimum: 1 }
+        scopeType: { type: string, enum: [INSTALLATION, PROJECT] }
+        projectId: { $ref: '#/components/schemas/StableId' }
+        rules: { $ref: '#/components/schemas/AdmissionPolicyRules' }
+    UpdateAdmissionPolicy:
+      type: object
+      additionalProperties: false
+      required: [rules]
+      properties:
+        rules: { $ref: '#/components/schemas/AdmissionPolicyRules' }
+    ProjectAdmissionSettings:
+      type: object
+      additionalProperties: false
+      required: [projectId, policyVersion, schedulingWeight, schedulingVersion, rules]
+      properties:
+        projectId: { $ref: '#/components/schemas/StableId' }
+        policyId:
+          type: [string, 'null']
+          maxLength: 128
+        policyVersion: { type: integer, minimum: 0 }
+        schedulingWeight: { type: integer, minimum: 1, maximum: 1000000 }
+        schedulingVersion: { type: integer, minimum: 1 }
+        rules: { $ref: '#/components/schemas/AdmissionPolicyRules' }
+    UpdateProjectAdmissionSettings:
+      type: object
+      additionalProperties: false
+      required: [schedulingWeight, rules]
+      properties:
+        schedulingWeight: { type: integer, minimum: 1, maximum: 1000000 }
+        rules: { $ref: '#/components/schemas/AdmissionPolicyRules' }
+    QuotaCounters:
+      type: object
+      additionalProperties: false
+      required: [concurrent, queued, retained]
+      properties:
+        concurrent: { type: integer, minimum: 0 }
+        queued: { type: integer, minimum: 0 }
+        retained: { type: integer, minimum: 0 }
+    AdmissionDecision:
+      type: object
+      additionalProperties: false
+      required: [id, projectId, jobId, accepted, reason, decidedAt]
+      properties:
+        id: { type: string, minLength: 1, maxLength: 128 }
+        projectId: { $ref: '#/components/schemas/StableId' }
+        jobId: { type: string, format: uuid }
+        accepted: { type: boolean }
+        reason: { type: string, minLength: 1, maxLength: 128 }
+        policyVersion: { type: integer, minimum: 1 }
+        schedulingWeight: { type: integer, minimum: 1, maximum: 1000000 }
+        decidedAt: { type: string, format: date-time }
+    AdmissionDecisionPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          maxItems: 200
+          items: { $ref: '#/components/schemas/AdmissionDecision' }
+        nextCursor:
+          type: [string, 'null']
+          maxLength: 512
+    CreateProject:
+      type: object
+      additionalProperties: false
+      required: [id, name]
+      properties:
+        id: { $ref: '#/components/schemas/StableId' }
+        name: { type: string, minLength: 1, maxLength: 128 }
+    ProjectPage:
+      allOf:
+        - { $ref: '#/components/schemas/CursorPage' }
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              maxItems: 200
+              items: { $ref: '#/components/schemas/Project' }
+    Team:
+      type: object
+      additionalProperties: false
+      required: [id, installationId, name, createdAt]
+      properties:
+        id: { $ref: '#/components/schemas/StableId' }
+        installationId: { $ref: '#/components/schemas/StableId' }
+        name: { type: string, minLength: 1, maxLength: 128 }
+        createdAt: { type: string, format: date-time }
+    CreateTeam:
+      type: object
+      additionalProperties: false
+      required: [id, name]
+      properties:
+        id: { $ref: '#/components/schemas/StableId' }
+        name: { type: string, minLength: 1, maxLength: 128 }
+    TeamPage:
+      allOf:
+        - { $ref: '#/components/schemas/CursorPage' }
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              maxItems: 200
+              items: { $ref: '#/components/schemas/Team' }
+    TeamMembership:
+      type: object
+      additionalProperties: false
+      required: [teamId, principalId, source, createdAt]
+      properties:
+        teamId: { $ref: '#/components/schemas/StableId' }
+        principalId: { $ref: '#/components/schemas/StableId' }
+        source: { type: string, enum: [MANUAL, OIDC] }
+        sourceIdentityProviderId: { $ref: '#/components/schemas/StableId' }
+        createdAt: { type: string, format: date-time }
+    CreateTeamMembership:
+      type: object
+      additionalProperties: false
+      required: [principalId]
+      properties:
+        principalId: { $ref: '#/components/schemas/StableId' }
+    TeamMembershipPage:
+      allOf:
+        - { $ref: '#/components/schemas/CursorPage' }
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              maxItems: 200
+              items: { $ref: '#/components/schemas/TeamMembership' }
+    RoleDefinition:
+      type: object
+      additionalProperties: false
+      required: [id, installationId, name, scopeType, permissions, builtIn, revision, createdAt]
+      properties:
+        id: { $ref: '#/components/schemas/StableId' }
+        installationId: { $ref: '#/components/schemas/StableId' }
+        name: { type: string, minLength: 1, maxLength: 128 }
+        scopeType: { $ref: '#/components/schemas/AccessScopeType' }
+        permissions:
+          type: array
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/Permission' }
+        builtIn: { type: boolean }
+        revision: { type: integer, format: int64, minimum: 1 }
+        createdAt: { type: string, format: date-time }
+    CreateRoleDefinition:
+      type: object
+      additionalProperties: false
+      required: [id, name, scopeType, permissions]
+      properties:
+        id: { $ref: '#/components/schemas/StableId' }
+        name: { type: string, minLength: 1, maxLength: 128 }
+        scopeType: { $ref: '#/components/schemas/AccessScopeType' }
+        permissions:
+          type: array
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/Permission' }
+    UpdateRoleDefinition:
+      type: object
+      additionalProperties: false
+      required: [name, scopeType, permissions]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 128 }
+        scopeType: { $ref: '#/components/schemas/AccessScopeType' }
+        permissions:
+          type: array
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/Permission' }
+    RoleDefinitionPage:
+      allOf:
+        - { $ref: '#/components/schemas/CursorPage' }
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              maxItems: 200
+              items: { $ref: '#/components/schemas/RoleDefinition' }
+    RoleBindingSubjectKind:
+      type: string
+      enum: [PRINCIPAL, TEAM]
+    RoleBindingSubject:
+      type: object
+      additionalProperties: false
+      required: [kind, id]
+      properties:
+        kind: { $ref: '#/components/schemas/RoleBindingSubjectKind' }
+        id: { $ref: '#/components/schemas/StableId' }
+    RoleBindingScope:
+      type: object
+      additionalProperties: false
+      required: [scopeType]
+      properties:
+        scopeType: { $ref: '#/components/schemas/AccessScopeType' }
+        projectId: { $ref: '#/components/schemas/StableId' }
+    RoleBinding:
+      type: object
+      additionalProperties: false
+      required: [id, installationId, roleDefinitionId, scope, subject, createdAt]
+      properties:
+        id: { $ref: '#/components/schemas/StableId' }
+        installationId: { $ref: '#/components/schemas/StableId' }
+        roleDefinitionId: { $ref: '#/components/schemas/StableId' }
+        scope: { $ref: '#/components/schemas/RoleBindingScope' }
+        subject: { $ref: '#/components/schemas/RoleBindingSubject' }
+        createdAt: { type: string, format: date-time }
+    CreateRoleBinding:
+      type: object
+      additionalProperties: false
+      required: [id, roleDefinitionId, scope, subject]
+      properties:
+        id: { $ref: '#/components/schemas/StableId' }
+        roleDefinitionId: { $ref: '#/components/schemas/StableId' }
+        scope: { $ref: '#/components/schemas/RoleBindingScope' }
+        subject: { $ref: '#/components/schemas/RoleBindingSubject' }
+    RoleBindingPage:
+      allOf:
+        - { $ref: '#/components/schemas/CursorPage' }
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              maxItems: 200
+              items: { $ref: '#/components/schemas/RoleBinding' }
+    EffectiveGrant:
+      type: object
+      additionalProperties: false
+      required: [roleBindingId, roleDefinitionId, roleName, scope, permissions, source]
+      properties:
+        roleBindingId: { $ref: '#/components/schemas/StableId' }
+        roleDefinitionId: { $ref: '#/components/schemas/StableId' }
+        roleName: { type: string, minLength: 1, maxLength: 128 }
+        scope: { $ref: '#/components/schemas/RoleBindingScope' }
+        permissions:
+          type: array
+          maxItems: 100
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/Permission' }
+        source: { type: string, enum: [DIRECT, TEAM] }
+        viaTeamId: { $ref: '#/components/schemas/StableId' }
+    EffectiveGrantPage:
+      allOf:
+        - { $ref: '#/components/schemas/CursorPage' }
+        - type: object
+          required: [principalId, items]
+          properties:
+            principalId: { $ref: '#/components/schemas/StableId' }
+            items:
+              type: array
+              maxItems: 200
+              items: { $ref: '#/components/schemas/EffectiveGrant' }
+    ServiceAccount:
+      type: object
+      additionalProperties: false
+      required: [principalId, installationId, displayName, createdByPrincipalId, createdAt]
+      properties:
+        principalId: { $ref: '#/components/schemas/StableId' }
+        installationId: { $ref: '#/components/schemas/StableId' }
+        projectId:
+          oneOf:
+            - { $ref: '#/components/schemas/StableId' }
+            - { type: 'null' }
+        displayName: { type: string, minLength: 1, maxLength: 128 }
+        oidcIdentity:
+          oneOf:
+            - { $ref: '#/components/schemas/ServiceAccountOIDCIdentity' }
+            - { type: 'null' }
+        createdByPrincipalId: { $ref: '#/components/schemas/StableId' }
+        createdAt: { type: string, format: date-time }
+    ServiceAccountOIDCIdentity:
+      type: object
+      additionalProperties: false
+      required: [issuer, subject]
+      properties:
+        issuer:
+          type: string
+          format: uri
+          maxLength: 2048
+        subject:
+          type: string
+          minLength: 1
+          maxLength: 512
+    BindServiceAccountOIDCIdentity:
+      allOf:
+        - { $ref: '#/components/schemas/ServiceAccountOIDCIdentity' }
+    CreateServiceAccount:
+      type: object
+      additionalProperties: false
+      required: [principalId, displayName]
+      properties:
+        principalId: { $ref: '#/components/schemas/StableId' }
+        projectId: { $ref: '#/components/schemas/StableId' }
+        displayName: { type: string, minLength: 1, maxLength: 128 }
+    ServiceAccountPage:
+      allOf:
+        - { $ref: '#/components/schemas/CursorPage' }
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              maxItems: 200
+              items: { $ref: '#/components/schemas/ServiceAccount' }
+    CredentialStatus:
+      type: string
+      enum: [ACTIVE, OVERLAP, EXPIRED, REVOKED]
+    ServiceAccountCredential:
+      type: object
+      additionalProperties: false
+      required:
+        [id, serviceAccountPrincipalId, safePrefix, permissions, status, expiresAt, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        serviceAccountPrincipalId: { $ref: '#/components/schemas/StableId' }
+        safePrefix: { type: string, minLength: 4, maxLength: 32 }
+        permissions:
+          type: array
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/Permission' }
+        status: { $ref: '#/components/schemas/CredentialStatus' }
+        expiresAt: { type: string, format: date-time }
+        lastUsedAt: { type: string, format: date-time }
+        rotatedAt: { type: string, format: date-time }
+        overlapExpiresAt: { type: string, format: date-time }
+        revokedAt: { type: string, format: date-time }
+        createdAt: { type: string, format: date-time }
+    ServiceAccountCredentialPage:
+      allOf:
+        - { $ref: '#/components/schemas/CredentialCursorPage' }
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              maxItems: 200
+              items: { $ref: '#/components/schemas/ServiceAccountCredential' }
+    IssueServiceAccountCredential:
+      type: object
+      additionalProperties: false
+      required: [permissions, expiresAt]
+      properties:
+        permissions:
+          type: array
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/Permission' }
+        expiresAt: { type: string, format: date-time }
+    IssuedServiceAccountCredential:
+      type: object
+      additionalProperties: false
+      required: [credential, token]
+      properties:
+        credential: { $ref: '#/components/schemas/ServiceAccountCredential' }
+        token:
+          type: string
+          minLength: 32
+          maxLength: 512
+          writeOnly: true
+          description: Plaintext credential returned exactly once and never available from reads.
+    RotateServiceAccountCredential:
+      type: object
+      additionalProperties: false
+      required: [permissions, expiresAt, overlapSeconds]
+      properties:
+        permissions:
+          type: array
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/Permission' }
+        expiresAt: { type: string, format: date-time }
+        overlapSeconds:
+          type: integer
+          minimum: 0
+          maximum: 300
+          default: 300
+    RotatedServiceAccountCredential:
+      type: object
+      additionalProperties: false
+      required: [previousCredentialId, replacement, token]
+      properties:
+        previousCredentialId: { type: string, format: uuid }
+        overlapExpiresAt: { type: string, format: date-time }
+        replacement: { $ref: '#/components/schemas/ServiceAccountCredential' }
+        token:
+          type: string
+          minLength: 32
+          maxLength: 512
+          writeOnly: true
+          description: Replacement plaintext returned exactly once for this rotation response.
+    SetupReadiness:
+      type: object
+      required: [ready]
+      properties:
+        ready: { type: boolean }
+        message: { type: string, maxLength: 256 }
+    SetupStatus:
+      type: object
+      required:
+        [available, state, api, database, schema, worker, kubernetesAuthority, release, publicUrl]
+      properties:
+        available: { type: boolean }
+        state: { type: string, enum: [AVAILABLE, COMPLETED, UNAVAILABLE] }
+        api: { $ref: '#/components/schemas/SetupReadiness' }
+        database: { $ref: '#/components/schemas/SetupReadiness' }
+        schema: { $ref: '#/components/schemas/SetupReadiness' }
+        worker: { $ref: '#/components/schemas/SetupReadiness' }
+        kubernetesAuthority: { $ref: '#/components/schemas/SetupReadiness' }
+        release: { $ref: '#/components/schemas/SetupReadiness' }
+        publicUrl: { $ref: '#/components/schemas/SetupReadiness' }
+    SetupPolicy:
+      type: object
+      required:
+        [
+          globalConcurrency,
+          namespaceConcurrency,
+          queueCapacity,
+          minimumPriority,
+          maximumPriority,
+          maximumDelaySeconds,
+          maximumRunningJobs,
+          maximumQueuedJobs,
+        ]
+      properties:
+        globalConcurrency: { type: integer, minimum: 1, maximum: 10000 }
+        namespaceConcurrency: { type: integer, minimum: 1, maximum: 10000 }
+        queueCapacity: { type: integer, minimum: 1, maximum: 1000000 }
+        minimumPriority: { type: integer, minimum: -1000, maximum: 1000 }
+        maximumPriority: { type: integer, minimum: -1000, maximum: 1000 }
+        maximumDelaySeconds: { type: integer, minimum: 0, maximum: 31536000 }
+        maximumRunningJobs: { type: integer, minimum: 1, maximum: 10000 }
+        maximumQueuedJobs: { type: integer, minimum: 1, maximum: 1000000 }
+    LocalUsername:
+      type: string
+      minLength: 1
+      maxLength: 128
+      pattern: '^[A-Za-z0-9][A-Za-z0-9._-]*$'
+      default: admin
+    LocalPassword:
+      type: string
+      minLength: 12
+      maxLength: 128
+      writeOnly: true
+      description: Plaintext accepted only for password verification or replacement and never persisted, logged, audited, or returned.
+    LocalPasswordCredential:
+      type: string
+      minLength: 1
+      maxLength: 128
+      writeOnly: true
+      description: Existing plaintext credential accepted only for verification and never persisted, logged, audited, or returned.
+    SetupLocalAdmin:
+      type: object
+      additionalProperties: false
+      required: [username, password]
+      properties:
+        username: { $ref: '#/components/schemas/LocalUsername' }
+        password: { $ref: '#/components/schemas/LocalPassword' }
+    SetupClaimRequest:
+      type: object
+      additionalProperties: false
+      required: [installationName, localAdmin, projectName, namespaces, policy]
+      properties:
+        installationName: { type: string, minLength: 1, maxLength: 128 }
+        localAdmin: { $ref: '#/components/schemas/SetupLocalAdmin' }
+        projectName: { type: string, minLength: 1, maxLength: 128 }
+        namespaces:
+          type: array
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 63 }
+        policy: { $ref: '#/components/schemas/SetupPolicy' }
+    SetupClaim:
+      type: object
+      additionalProperties: false
+      required: [installationId, ownerPrincipalId, username, status, createdAt]
+      properties:
+        installationId: { $ref: '#/components/schemas/StableId' }
+        ownerPrincipalId: { $ref: '#/components/schemas/StableId' }
+        username: { $ref: '#/components/schemas/LocalUsername' }
+        status: { type: string, enum: [COMPLETED] }
+        createdAt: { type: string, format: date-time }
+    SetupRecovery:
+      type: object
+      required: [completed, checklist]
+      properties:
+        completed: { type: boolean }
+        checklist:
+          type: array
+          maxItems: 10
+          items: { type: string, maxLength: 256 }
+    LoginMethod:
+      type: object
+      additionalProperties: false
+      required: [type, id, label]
+      properties:
+        type: { type: string, enum: [LOCAL, OIDC] }
+        id: { type: string, minLength: 1, maxLength: 128 }
+        label: { type: string, minLength: 1, maxLength: 128 }
+    LoginMethodList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 20
+          items: { $ref: '#/components/schemas/LoginMethod' }
+    IdentityProviderState:
+      type: string
+      enum: [DISABLED, ENABLED]
+    IdentityProviderTestStatus:
+      type: string
+      enum: [NOT_TESTED, PASSED, FAILED]
+    IdentityProviderTestResult:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status: { $ref: '#/components/schemas/IdentityProviderTestStatus' }
+        testedAt: { type: string, format: date-time }
+        message:
+          type: string
+          maxLength: 256
+          description: Bounded allowlisted result that contains no endpoint response body, token, secret, or raw error.
+    OIDCIdentityProviderConfiguration:
+      type: object
+      required: [displayName, issuer, audience, clientId, redirectUri, allowedAlgorithms]
+      properties:
+        displayName: { type: string, minLength: 1, maxLength: 128 }
+        issuer: { type: string, format: uri, maxLength: 2048 }
+        audience: { type: string, minLength: 1, maxLength: 256 }
+        clientId: { type: string, minLength: 1, maxLength: 256 }
+        clientSecret:
+          type: string
+          minLength: 1
+          maxLength: 4096
+          writeOnly: true
+          description: Omit on update to preserve the configured secret.
+        clientSecretReference:
+          type: string
+          minLength: 1
+          maxLength: 512
+          writeOnly: true
+          description: Opaque customer-controlled secret reference. Mutually exclusive with clientSecret; KubeQueue does not mount Kubernetes credentials to resolve it.
+        redirectUri: { type: string, format: uri, maxLength: 2048 }
+        authorizedParty: { type: string, maxLength: 256 }
+        allowedAlgorithms:
+          type: array
+          minItems: 1
+          maxItems: 6
+          uniqueItems: true
+          items: { type: string, enum: [RS256, RS384, RS512, ES256, ES384, ES512] }
+        mappingType: { type: string, enum: [GROUP, DOMAIN] }
+        mappingValue: { type: string, minLength: 1, maxLength: 256 }
+        groupsClaim: { type: string, default: groups, maxLength: 128 }
+        emailClaim: { type: string, default: email, maxLength: 128 }
+        nameClaim: { type: string, default: name, maxLength: 128 }
+        cacheTtlSeconds: { type: integer, minimum: 60, maximum: 86400, default: 300 }
+    ConfigureOIDCIdentityProvider:
+      allOf:
+        - $ref: '#/components/schemas/OIDCIdentityProviderConfiguration'
+      unevaluatedProperties: false
+    CreateOIDCIdentityProvider:
+      allOf:
+        - $ref: '#/components/schemas/OIDCIdentityProviderConfiguration'
+        - type: object
+          required: [id]
+          properties:
+            id: { type: string, pattern: '^[a-z][a-z0-9_]{0,62}$' }
+      unevaluatedProperties: false
+    IdentityProvider:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          id,
+          type,
+          displayName,
+          issuer,
+          audience,
+          clientId,
+          clientSecretConfigured,
+          redirectUri,
+          allowedAlgorithms,
+          state,
+          testResult,
+          version,
+          createdAt,
+          updatedAt,
+        ]
+      properties:
+        id: { type: string, pattern: '^[a-z][a-z0-9_]{0,62}$' }
+        type: { type: string, enum: [OIDC] }
+        displayName: { type: string, minLength: 1, maxLength: 128 }
+        issuer: { type: string, format: uri, maxLength: 2048 }
+        audience: { type: string, minLength: 1, maxLength: 256 }
+        clientId: { type: string, minLength: 1, maxLength: 256 }
+        clientSecretConfigured: { type: boolean }
+        redirectUri: { type: string, format: uri, maxLength: 2048 }
+        authorizedParty: { type: string, maxLength: 256 }
+        allowedAlgorithms:
+          type: array
+          minItems: 1
+          maxItems: 6
+          uniqueItems: true
+          items: { type: string, enum: [RS256, RS384, RS512, ES256, ES384, ES512] }
+        mappingType: { type: string, enum: [GROUP, DOMAIN] }
+        mappingValue: { type: string, minLength: 1, maxLength: 256 }
+        groupsClaim: { type: string, maxLength: 128 }
+        emailClaim: { type: string, maxLength: 128 }
+        nameClaim: { type: string, maxLength: 128 }
+        cacheTtlSeconds: { type: integer, minimum: 60, maximum: 86400 }
+        state: { $ref: '#/components/schemas/IdentityProviderState' }
+        testResult: { $ref: '#/components/schemas/IdentityProviderTestResult' }
+        version: { type: integer, minimum: 1 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    IdentityProviderList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 20
+          items: { $ref: '#/components/schemas/IdentityProvider' }
+    OAuthLoginAttempt:
+      type: object
+      required: [state, nonce, pkceVerifier, returnTo]
+      properties:
+        state: { type: string, maxLength: 256 }
+        nonce: { type: string, maxLength: 256 }
+        pkceVerifier: { type: string, writeOnly: true, maxLength: 256 }
+        returnTo: { type: string, maxLength: 2048 }
+    ConsumedOAuthLoginAttempt:
+      type: object
+      required: [nonce, pkceVerifier, returnTo]
+      properties:
+        nonce: { type: string, maxLength: 256 }
+        pkceVerifier: { type: string, writeOnly: true, maxLength: 256 }
+        returnTo: { type: string, maxLength: 2048 }
+    ExchangeOIDCAuthorizationCode:
+      type: object
+      additionalProperties: false
+      required: [identityProviderId, code, pkceVerifier, redirectUri]
+      properties:
+        identityProviderId: { type: string, pattern: '^[a-z][a-z0-9_]{0,62}$' }
+        code: { type: string, minLength: 1, maxLength: 8192 }
+        pkceVerifier: { type: string, minLength: 43, maxLength: 128 }
+        redirectUri: { type: string, format: uri, maxLength: 2048 }
+    OIDCTokenExchange:
+      type: object
+      additionalProperties: false
+      required: [identityProviderId, accessToken]
+      properties:
+        identityProviderId: { type: string, pattern: '^[a-z][a-z0-9_]{0,62}$' }
+        accessToken: { type: string, minLength: 1, maxLength: 16384, writeOnly: true }
+        refreshToken: { type: string, maxLength: 16384, writeOnly: true }
+    OIDCAuthorizationMetadata:
+      type: object
+      additionalProperties: false
+      required: [id, issuer, clientId, redirectUri, scopes]
+      properties:
+        id: { type: string, pattern: '^[a-z][a-z0-9_]{0,62}$' }
+        issuer: { type: string, format: uri, maxLength: 2048 }
+        clientId: { type: string, minLength: 1, maxLength: 256 }
+        redirectUri: { type: string, format: uri, maxLength: 2048 }
+        scopes: { type: string, minLength: 6, maxLength: 512 }
+    CreateLocalBrowserSession:
+      type: object
+      additionalProperties: false
+      required: [username, password]
+      properties:
+        username: { $ref: '#/components/schemas/LocalUsername' }
+        password: { $ref: '#/components/schemas/LocalPasswordCredential' }
+    ChangeLocalPassword:
+      type: object
+      additionalProperties: false
+      required: [currentPassword, newPassword]
+      properties:
+        currentPassword: { $ref: '#/components/schemas/LocalPasswordCredential' }
+        newPassword: { $ref: '#/components/schemas/LocalPassword' }
+    ResetLocalPassword:
+      type: object
+      additionalProperties: false
+      required: [newPassword]
+      properties:
+        newPassword: { $ref: '#/components/schemas/LocalPassword' }
+    CreateBrowserSession:
+      type: object
+      required: [identityProviderId, authenticationMethod, accessToken]
+      properties:
+        identityProviderId: { type: string, maxLength: 128 }
+        authenticationMethod: { type: string, enum: [OIDC] }
+        refreshToken:
+          type: string
+          minLength: 1
+          maxLength: 16384
+          writeOnly: true
+        accessToken:
+          type: string
+          minLength: 1
+          maxLength: 16384
+          writeOnly: true
+        rotateCredential:
+          type: string
+          minLength: 1
+          maxLength: 256
+          writeOnly: true
+    CreatedBrowserSession:
+      type: object
+      required: [credential, session]
+      properties:
+        credential:
+          type: string
+          minLength: 1
+          maxLength: 256
+          writeOnly: true
+        session: { $ref: '#/components/schemas/BrowserSession' }
+    BrowserSession:
+      type: object
+      required:
+        [
+          principalId,
+          installationId,
+          authenticationMethod,
+          csrfToken,
+          idleExpiresAt,
+          absoluteExpiresAt,
+        ]
+      properties:
+        principalId: { type: string }
+        installationId: { type: string }
+        identityProviderId: { type: string }
+        authenticationMethod: { type: string, enum: [LOCAL, OIDC] }
+        csrfToken:
+          type: string
+          description: Non-secret, session-bound double-submit value for browser mutations.
+          maxLength: 256
+        idleExpiresAt: { type: string, format: date-time }
+        absoluteExpiresAt: { type: string, format: date-time }
+    BrowserSessionRefresh:
+      allOf:
+        - $ref: '#/components/schemas/BrowserSession'
+        - type: object
+          required: [refreshed]
+          properties:
+            refreshed:
+              type: boolean
+              description: Whether provider tokens were renewed during this request.
     WorkerState:
       type: string
       enum: [ready, degraded, unavailable]
@@ -329,6 +2955,72 @@ components:
               scope: { type: string }
               code: { type: string }
               message: { type: string }
+    SupportDiagnostics:
+      type: object
+      required:
+        [
+          generatedAt,
+          versions,
+          schema,
+          leadership,
+          worker,
+          watch,
+          recentErrorClasses,
+          auditWriterOverloadCount,
+        ]
+      properties:
+        generatedAt: { type: string, format: date-time }
+        versions:
+          type: object
+          required: [api, worker]
+          properties:
+            api: { type: string, maxLength: 128 }
+            worker: { type: string, maxLength: 128 }
+        schema:
+          type: object
+          required: [healthy, current, latest]
+          properties:
+            healthy: { type: boolean }
+            current: { type: string, maxLength: 128 }
+            latest: { type: string, maxLength: 128 }
+        leadership:
+          type: object
+          required: [held, generation]
+          properties:
+            held: { type: boolean }
+            generation: { type: integer, format: int64, minimum: 0 }
+        worker:
+          type: object
+          required: [state]
+          properties:
+            state: { $ref: '#/components/schemas/WorkerState' }
+            heartbeatAt: { type: string, format: date-time }
+            lastSuccessfulReconciliationAt: { type: string, format: date-time }
+        watch:
+          type: object
+          required: [mode, effectiveNamespaces, excludedNamespaces, namespaces]
+          properties:
+            mode: { type: string, enum: [selected, all] }
+            effectiveNamespaces:
+              type: array
+              items: { type: string }
+            excludedNamespaces:
+              type: array
+              items: { type: string }
+            namespaces:
+              type: array
+              items: { $ref: '#/components/schemas/NamespaceAuthorityStatus' }
+        recentErrorClasses:
+          type: array
+          maxItems: 20
+          items:
+            type: object
+            required: [class, count]
+            properties:
+              class: { type: string, maxLength: 64 }
+              count: { type: integer, format: int64, minimum: 1 }
+              lastSeenAt: { type: string, format: date-time }
+        auditWriterOverloadCount: { type: integer, format: int64, minimum: 0 }
     JobState:
       type: string
       enum: [CREATED, QUEUED, RUNNING, PAUSED, COMPLETED, FAILED, CANCELLED]
@@ -343,6 +3035,7 @@ components:
       required:
         [
           id,
+          projectId,
           name,
           namespace,
           priority,
@@ -352,7 +3045,6 @@ components:
           managementMode,
           syncStatus,
           actionPending,
-          template,
           attempt,
           version,
           createdAt,
@@ -360,6 +3052,7 @@ components:
         ]
       properties:
         id: { type: string, format: uuid }
+        projectId: { type: string, format: uuid }
         parentId: { type: string, format: uuid }
         name: { type: string }
         namespace: { type: string }
@@ -379,11 +3072,19 @@ components:
         errorRemediation: { type: string }
         scheduledFor: { type: string, format: date-time }
         kubernetesUid: { type: string }
-        template: { type: object, additionalProperties: true }
         attempt: { type: integer }
         version: { type: integer }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+    JobManifest:
+      type: object
+      required: [jobId, manifest]
+      properties:
+        jobId: { type: string, format: uuid }
+        manifest:
+          type: object
+          additionalProperties: true
+          description: Stored Kubernetes Job template with control-plane and resource-version fields omitted.
     JobList:
       type: object
       required: [items, count, queueVersion]
@@ -393,6 +3094,21 @@ components:
           items: { $ref: '#/components/schemas/Job' }
         count: { type: integer }
         queueVersion: { type: integer, minimum: 0 }
+    JobPage:
+      type: object
+      required: [items, count, queueVersion, nextCursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Job' }
+        count:
+          type: integer
+          minimum: 0
+          description: Number of items in this page.
+        queueVersion: { type: integer, minimum: 0 }
+        nextCursor:
+          type: [string, 'null']
+          description: Opaque continuation token, or null when this is the final page.
     JobFacets:
       type: object
       required: [total, observedStateCounts, namespaces, teams]
@@ -405,9 +3121,13 @@ components:
             minimum: 0
         namespaces:
           type: array
+          maxItems: 100
+          description: At most the first 100 distinct non-empty namespaces in lexical order. The response does not indicate whether additional values were truncated.
           items: { type: string }
         teams:
           type: array
+          maxItems: 100
+          description: At most the first 100 distinct non-empty teams in lexical order. The response does not indicate whether additional values were truncated.
           items: { type: string }
     CreateJob:
       type: object
@@ -423,20 +3143,43 @@ components:
       type: object
       required: [id, jobId, type, message, createdAt]
       properties:
-        id: { type: integer }
+        id: { type: integer, minimum: 1 }
         jobId: { type: string, format: uuid }
         type: { type: string }
         message: { type: string }
         data: { type: object, additionalProperties: true }
         createdAt: { type: string, format: date-time }
+    JobEventPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          maxItems: 200
+          description: Events in descending ID order (newest first).
+          items: { $ref: '#/components/schemas/JobEvent' }
+        nextCursor:
+          type: [string, 'null']
+          description: Opaque job-specific continuation token, or null when this is the final page.
     ErrorResponse:
       type: object
-      required: [error]
+      additionalProperties: false
+      required: [requestId, error]
       properties:
+        requestId: { $ref: '#/components/schemas/RequestId' }
         error:
           type: object
-          required: [code, message, status]
+          additionalProperties: false
+          required: [code, message, status, details]
           properties:
-            code: { type: string }
-            message: { type: string }
-            status: { type: integer }
+            code: { type: string, minLength: 1, maxLength: 96 }
+            message: { type: string, minLength: 1, maxLength: 512 }
+            status: { type: integer, minimum: 400, maximum: 599 }
+            details:
+              type: object
+              maxProperties: 16
+              propertyNames:
+                pattern: '^[A-Za-z][A-Za-z0-9_.-]{0,63}$'
+              additionalProperties:
+                type: string
+                maxLength: 512

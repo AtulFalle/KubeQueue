@@ -6,8 +6,8 @@ Kubernetes or requiring a custom resource.
 
 > [!WARNING]
 > KubeQueue v0.1 is an experimental developer preview. It does not provide production support,
-> upgrade compatibility, or multi-user authorization. The dashboard is an administrative surface:
-> keep it cluster-private and access it through authenticated Kubernetes port-forwarding.
+> guaranteed upgrade compatibility, or completed GA security and recovery gates. Keep first-time
+> setup cluster-private and use authenticated, TLS-protected access for shared installations.
 
 ## Install a preview release
 
@@ -24,8 +24,11 @@ Create the namespace and secrets without placing credentials in Helm release val
 kubectl create namespace kubequeue
 kubectl -n kubequeue create secret generic kubequeue-database \
   --from-literal=database-url='postgres://USER:PASSWORD@HOST:5432/kubequeue?sslmode=require'
-kubectl -n kubequeue create secret generic kubequeue-admin \
-  --from-literal=admin-token="$(openssl rand -hex 32)"
+kubectl -n kubequeue create secret generic kubequeue-security \
+  --from-literal=session-digest-key="$(openssl rand -base64 32 | tr -d '\r\n')" \
+  --from-literal=credential-encryption-key="$(openssl rand -base64 32 | tr -d '\r\n')" \
+  --from-literal=bff-internal-key="$(openssl rand -hex 32)" \
+  --from-literal=service-account-digest-key="$(openssl rand -base64 32 | tr -d '\r\n')"
 ```
 
 Install the OCI chart:
@@ -35,7 +38,9 @@ helm install kubequeue oci://ghcr.io/atulfalle/charts/kubequeue \
   --version <release-version> \
   --namespace kubequeue \
   --set-string database.existingSecret=kubequeue-database \
-  --set-string config.adminTokenExistingSecret=kubequeue-admin
+  --set-string security.existingSecret=kubequeue-security \
+  --set-string browser.publicURL=http://localhost:3000 \
+  --set-string browser.origin=http://localhost:3000
 ```
 
 Access the cluster-private dashboard:
@@ -44,8 +49,8 @@ Access the cluster-private dashboard:
 kubectl -n kubequeue port-forward service/kubequeue-kubequeue-web 3000:3000
 ```
 
-Open <http://127.0.0.1:3000>. Do not expose this preview dashboard through a public Service or
-Ingress: every dashboard user receives administrative API access.
+Open <http://localhost:3000> and complete guarded local-owner setup. OIDC is optional and can be
+configured dynamically from Settings later.
 
 Uninstall with `helm uninstall kubequeue --namespace kubequeue`. The external PostgreSQL database
 and manually created Secrets are retained. Review the chart-specific guidance in
@@ -73,14 +78,18 @@ Nx orchestrates both the TypeScript and Go projects. The Go module remains indep
 
 ## Start the complete development stack
 
-Docker with Compose is the only local prerequisite for the containerized workflow:
+With Node.js, pnpm, and Docker available, the local workflow is one command:
 
 ```bash
-docker compose up --build --watch
+pnpm dev
 ```
 
 The first run builds the development images and downloads dependencies inside containers. Compose
-then watches source files; Next.js and Air reload the web, API, and worker processes.
+then watches source files; Next.js and Air reload the web, API, and worker processes. The Nx target
+applies pending migrations before startup, starts without OIDC, binds every published port to
+loopback, and creates the development-only `admin` / `admin` login. Set
+`KUBEQUEUE_DEV_SEED_LOCAL_ADMIN=false` only when specifically testing guarded first-time setup
+against a Kubernetes-enabled stack.
 
 - Web: <http://localhost:3000>
 - API health: <http://localhost:8080/healthz>
@@ -93,9 +102,21 @@ untracked `.env` file when needed. In Adminer, choose PostgreSQL and use server 
 `kubequeue`, and the same credentials. Press Ctrl+C to stop attached services, then run
 `docker compose down` to remove containers. The database volume is preserved.
 
-After Node dependencies are installed locally, `pnpm dev` runs the same Compose workflow through
-Nx. Use `pnpm go:tidy` to generate Go module checksums inside Docker without installing Go on the
-host. Use `pnpm dev:down` and `pnpm dev:logs` for lifecycle and logs.
+Use `pnpm go:tidy` to generate Go module checksums inside Docker without installing Go on the host.
+Use `pnpm dev:down` and `pnpm dev:logs` for lifecycle and logs.
+
+## Test the packaged production build
+
+Run one acceptance target:
+
+```bash
+pnpm nx run deploy:chart-acceptance
+```
+
+It creates a disposable kind cluster, builds production images, installs the packaged Helm chart,
+runs migrations and Helm readiness checks, and exercises the browser lifecycle workflow. It does
+not require OIDC. Set `KUBEQUEUE_ACCEPTANCE_KEEP_CLUSTER=true` only when you want to inspect the
+finished installation manually; otherwise the target cleans it up.
 
 ## Optional native toolchain
 

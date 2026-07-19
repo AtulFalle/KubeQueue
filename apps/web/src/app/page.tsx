@@ -1,5 +1,4 @@
 import {
-  KubeQueueClient,
   type Job,
   type JobFacets,
   type JobFilters,
@@ -7,6 +6,7 @@ import {
 } from '@kubequeue/api-client';
 
 import { Dashboard } from '../components/dashboard';
+import { serverAPIClient } from '../lib/server-api-client';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,11 +23,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
     search: typeof query.search === 'string' ? query.search : undefined,
     priority: typeof query.priority === 'string' ? Number(query.priority) : undefined,
   };
-  const origin = process.env.KUBEQUEUE_API_INTERNAL_URL ?? 'http://localhost:8080';
-  const client = new KubeQueueClient(
-    `${origin}/api/v1`,
-    process.env.KUBEQUEUE_ADMIN_TOKEN || undefined,
-  );
+  const client = await serverAPIClient();
   let initialJobs: Job[] = [];
   let initialQueueVersion = 0;
   let initialFacets: JobFacets = {

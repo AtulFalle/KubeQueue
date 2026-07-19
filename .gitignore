@@ -34,3 +34,6 @@ Thumbs.db
 
 # Kubernetes development
 .tiltbuild/
+.kubequeue-manual/
+compose.manual.local.yaml
+phase-3-manual-testing.local.md

@@ -2,8 +2,11 @@ package persistence
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
+	"sort"
+	"strconv"
 	"testing"
 	"time"
 
@@ -49,9 +52,158 @@ func TestStoreCreateListAndLifecycle(t *testing.T) {
 	if paused.DesiredState != domain.StatePaused {
 		t.Errorf("desired state = %s", paused.DesiredState)
 	}
-	events, err := store.Events(context.Background(), job.ID)
-	if err != nil || len(events) < 2 {
-		t.Fatalf("Events() = %d events, %v", len(events), err)
+	events, err := store.EventsPage(context.Background(), job.ID, ports.EventPageRequest{Limit: 50})
+	if err != nil || len(events.Items) < 2 {
+		t.Fatalf("EventsPage() = %d events, %v", len(events.Items), err)
+	}
+}
+
+func TestStoreEventsUseBoundedCursorPagination(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	store, err := Open(ctx, "file:test-event-pages?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	job, err := store.Create(ctx, domain.CreateJob{
+		Name: "events", Namespace: "default", Template: validJobTemplate,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for index := range 205 {
+		if err := store.transaction(ctx, func(tx *sql.Tx) error {
+			return store.addEvent(ctx, tx, job.ID, "TEST_EVENT", strconv.Itoa(index), nil)
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	seen := make(map[int64]struct{}, 206)
+	var before int64
+	for {
+		page, err := store.EventsPage(ctx, job.ID, ports.EventPageRequest{
+			Limit: 40, Before: before,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(page.Items) > 40 {
+			t.Fatalf("event page returned %d items", len(page.Items))
+		}
+		for _, event := range page.Items {
+			if _, duplicate := seen[event.ID]; duplicate {
+				t.Fatalf("event %d was returned twice", event.ID)
+			}
+			seen[event.ID] = struct{}{}
+		}
+		if page.Next == nil {
+			break
+		}
+		before = *page.Next
+	}
+	if len(seen) != 206 {
+		t.Fatalf("paginated history returned %d events, want 206", len(seen))
+	}
+}
+
+func TestStoreListPageUsesDeterministicKeysetPagination(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store, err := Open(ctx, "file:test-list-page?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	ids := make([]string, 0, 5)
+	for _, name := range []string{"echo", "delta", "charlie", "bravo", "alpha"} {
+		job, err := store.Create(ctx, domain.CreateJob{
+			Name: name, Namespace: "default", Priority: 10, Template: validJobTemplate,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, job.ID)
+	}
+	const tiedCreatedAt = "2026-07-19T10:00:00Z"
+	if _, err := store.db.ExecContext(ctx,
+		`UPDATE jobs SET priority=10,position=1,created_at=?`, tiedCreatedAt,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	sort.Strings(ids)
+	got := make([]string, 0, len(ids))
+	var after *ports.JobPageCursor
+	for {
+		page, err := store.ListPage(ctx, ports.JobPageRequest{
+			Sort: ports.JobSortQueue, Limit: 2, After: after,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, job := range page.Items {
+			got = append(got, job.ID)
+		}
+		if page.Next == nil {
+			break
+		}
+		after = page.Next
+	}
+	if len(got) != len(ids) {
+		t.Fatalf("paginated ids = %v, want %v", got, ids)
+	}
+	for index := range ids {
+		if got[index] != ids[index] {
+			t.Fatalf("paginated ids = %v, want deterministic id order %v", got, ids)
+		}
+	}
+
+	all, err := store.List(ctx, ports.JobFilter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != len(ids) {
+		t.Fatalf("unbounded internal List() returned %d jobs, want %d", len(all), len(ids))
+	}
+}
+
+func TestStoreListPageSupportsMaximumLimitAndContinuation(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store, err := Open(ctx, "file:test-list-page-max?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	for index := range 201 {
+		if _, err := store.Create(ctx, domain.CreateJob{
+			Name: "job-" + strconv.Itoa(index), Namespace: "default", Template: validJobTemplate,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	first, err := store.ListPage(ctx, ports.JobPageRequest{
+		Sort: ports.JobSortQueue, Limit: 200,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(first.Items) != 200 || first.Next == nil {
+		t.Fatalf("first page count = %d, next = %#v", len(first.Items), first.Next)
+	}
+	second, err := store.ListPage(ctx, ports.JobPageRequest{
+		Sort: ports.JobSortQueue, Limit: 200, After: first.Next,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(second.Items) != 1 || second.Next != nil ||
+		second.Items[0].ID == first.Items[len(first.Items)-1].ID {
+		t.Fatalf("second page = %#v", second)
 	}
 }
 
@@ -110,6 +262,82 @@ func TestStoreFacetsAggregateActiveInventory(t *testing.T) {
 	if len(facets.Teams) != 2 || facets.Teams[0] != "data" ||
 		facets.Teams[1] != "platform" {
 		t.Fatalf("Facets() teams = %#v", facets.Teams)
+	}
+}
+
+func TestStoreFacetsBoundDistinctValues(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	store, err := Open(ctx, "file:test-bounded-facets?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	for index := range 101 {
+		if _, err := store.Create(ctx, domain.CreateJob{
+			Name:      "job-" + strconv.Itoa(index),
+			Namespace: "namespace-" + strconv.Itoa(index),
+			Team:      "team-" + strconv.Itoa(index),
+			Template:  validJobTemplate,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	facets, err := store.Facets(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if facets.Total != 101 || len(facets.Namespaces) != 100 || len(facets.Teams) != 100 {
+		t.Fatalf("bounded facets = %#v", facets)
+	}
+}
+
+func TestStoreListPageFiltersSynchronizationAndTime(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	store, err := Open(ctx, "file:test-list-sync-time?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	older, err := store.Create(ctx, domain.CreateJob{
+		Name: "older", Namespace: "default", Template: validJobTemplate,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	newer, err := store.Create(ctx, domain.CreateJob{
+		Name: "newer", Namespace: "default", Template: validJobTemplate,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cutoff := time.Date(2026, 7, 19, 12, 0, 0, 0, time.UTC)
+	if _, err := store.db.ExecContext(ctx, store.bind(
+		`UPDATE jobs SET created_at=?,updated_at=?,sync_status=? WHERE id=?`),
+		cutoff.Add(-time.Hour).Format(time.RFC3339Nano),
+		cutoff.Add(-time.Hour).Format(time.RFC3339Nano),
+		domain.SyncStatusSynced, older.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.db.ExecContext(ctx, store.bind(
+		`UPDATE jobs SET created_at=?,updated_at=?,sync_status=? WHERE id=?`),
+		cutoff.Add(time.Hour).Format(time.RFC3339Nano),
+		cutoff.Add(time.Hour).Format(time.RFC3339Nano),
+		domain.SyncStatusError, newer.ID); err != nil {
+		t.Fatal(err)
+	}
+	page, err := store.ListPage(ctx, ports.JobPageRequest{
+		Filter: ports.JobFilter{
+			SyncStatus: domain.SyncStatusError, CreatedAfter: &cutoff, UpdatedAfter: &cutoff,
+		},
+		Sort: ports.JobSortCreatedAt, Limit: 50,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Items) != 1 || page.Items[0].ID != newer.ID {
+		t.Fatalf("filtered page = %#v", page.Items)
 	}
 }
 

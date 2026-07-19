@@ -9,6 +9,7 @@ import { QueueWorkflow } from './queue-workflow';
 function queuedJob(id: string, name: string, position: number): Job {
   return {
     id,
+    projectId: 'default-project',
     name,
     namespace: 'default',
     priority: 0,
@@ -18,7 +19,6 @@ function queuedJob(id: string, name: string, position: number): Job {
     managementMode: 'MANAGED',
     syncStatus: 'SYNCED',
     actionPending: false,
-    template: {},
     attempt: 1,
     version: 1,
     createdAt: '2026-07-18T00:00:00Z',

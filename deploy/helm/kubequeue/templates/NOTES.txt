@@ -1,12 +1,17 @@
 KubeQueue {{ .Chart.AppVersion }} has been installed as an experimental developer preview.
 
-The dashboard is an administrative surface. Keep it cluster-private and access it with:
+Keep the dashboard cluster-private unless its configured origin is served through trusted TLS.
+Access it with:
 
   kubectl -n {{ .Release.Namespace }} port-forward service/{{ include "kubequeue.fullname" . }}-web 3000:3000
 
-Then open http://127.0.0.1:3000.
+Then open {{ .Values.browser.publicURL }} and complete guarded local-owner setup.
 
-Do not expose the dashboard publicly without an external authentication layer.
+OIDC is optional and can be configured dynamically from Settings.
+{{- if .Values.development.localAdminSeed }}
+
+WARNING: the development-only admin/admin seed is enabled. Never use this setting in production.
+{{- end }}
 
 Watch mode: {{ .Values.watch.mode }}
 {{- if eq .Values.watch.mode "all" }}

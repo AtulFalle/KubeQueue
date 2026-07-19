@@ -13,6 +13,8 @@ spec:
       app.kubernetes.io/component: web
   template:
     metadata:
+      annotations:
+        checksum/security-reference: {{ include "kubequeue.securityReferenceChecksum" . }}
       labels:
         app.kubernetes.io/name: {{ include "kubequeue.name" . }}
         app.kubernetes.io/instance: {{ .Release.Name }}
@@ -40,11 +42,13 @@ spec:
               value: 0.0.0.0
             - name: KUBEQUEUE_API_INTERNAL_URL
               value: http://{{ include "kubequeue.fullname" . }}-api:8080
-            - name: KUBEQUEUE_ADMIN_TOKEN
+            - name: KUBEQUEUE_PUBLIC_URL
+              value: {{ .Values.browser.publicURL | quote }}
+            - name: KUBEQUEUE_BFF_INTERNAL_KEY
               valueFrom:
                 secretKeyRef:
-                  name: {{ default (printf "%s-config" (include "kubequeue.fullname" .)) .Values.config.adminTokenExistingSecret }}
-                  key: {{ .Values.config.adminTokenExistingSecretKey }}
+                  name: {{ include "kubequeue.securitySecretName" . }}
+                  key: {{ .Values.security.bffInternalKey }}
           volumeMounts:
             - name: next-cache
               mountPath: /app/apps/web/.next/cache

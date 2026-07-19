@@ -67,7 +67,11 @@ if (command === 'validate') {
     '--set-string',
     'database.url=postgres://example',
     '--set-string',
-    'config.adminToken=release-validation-token',
+    'security.existingSecret=release-validation-security',
+    '--set-string',
+    'browser.publicURL=https://queue.example.com',
+    '--set-string',
+    'browser.origin=https://queue.example.com',
   ]);
 
   const rendered = runHelm(
@@ -78,7 +82,11 @@ if (command === 'validate') {
       '--set-string',
       'database.url=postgres://example',
       '--set-string',
-      'config.adminToken=release-validation-token',
+      'security.existingSecret=release-validation-security',
+      '--set-string',
+      'browser.publicURL=https://queue.example.com',
+      '--set-string',
+      'browser.origin=https://queue.example.com',
       '--set-string',
       `api.image.tag=${version}`,
       '--set-string',
