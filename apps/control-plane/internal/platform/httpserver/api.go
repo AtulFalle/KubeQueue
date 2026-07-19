@@ -42,7 +42,7 @@ func registerAPI(router *gin.Engine, jobs *application.Jobs, repository ports.Re
 }
 
 func (a *API) systemStatus(c *gin.Context) {
-	status, err := a.system.Status(c)
+	status, err := a.system.Status(c.Request.Context())
 	if err != nil {
 		writeError(c, http.StatusServiceUnavailable, "SYSTEM_STATUS_UNAVAILABLE", err.Error())
 		return
@@ -65,7 +65,7 @@ func (a *API) create(c *gin.Context) {
 		writeError(c, http.StatusBadRequest, "INVALID_REQUEST", err.Error())
 		return
 	}
-	job, err := a.jobs.Create(c, domain.CreateJob{
+	job, err := a.jobs.Create(c.Request.Context(), domain.CreateJob{
 		Name: request.Name, Namespace: request.Namespace, Team: request.Team,
 		Priority: request.Priority, ScheduledFor: request.ScheduledFor, Template: request.Template,
 	})
@@ -99,7 +99,8 @@ func (a *API) list(c *gin.Context) {
 		}
 		priority = &parsed
 	}
-	jobs, err := a.jobs.List(c, ports.JobFilter{
+	ctx := c.Request.Context()
+	jobs, err := a.jobs.List(ctx, ports.JobFilter{
 		Status: status, Namespace: c.Query("namespace"), Team: c.Query("team"),
 		Search: c.Query("search"), Priority: priority,
 	})
@@ -107,7 +108,7 @@ func (a *API) list(c *gin.Context) {
 		writeError(c, http.StatusInternalServerError, "STORE_ERROR", err.Error())
 		return
 	}
-	queueVersion, err := a.repository.QueueVersion(c)
+	queueVersion, err := a.repository.QueueVersion(ctx)
 	if err != nil {
 		writeError(c, http.StatusInternalServerError, "STORE_ERROR", err.Error())
 		return
@@ -118,7 +119,7 @@ func (a *API) list(c *gin.Context) {
 }
 
 func (a *API) facets(c *gin.Context) {
-	facets, err := a.jobs.Facets(c)
+	facets, err := a.jobs.Facets(c.Request.Context())
 	if err != nil {
 		writeRepositoryError(c, err)
 		return
@@ -127,7 +128,7 @@ func (a *API) facets(c *gin.Context) {
 }
 
 func (a *API) queue(c *gin.Context) {
-	jobs, version, err := a.jobs.Queue(c)
+	jobs, version, err := a.jobs.Queue(c.Request.Context())
 	if err != nil {
 		writeRepositoryError(c, err)
 		return
@@ -141,7 +142,7 @@ func (a *API) get(c *gin.Context) {
 	if !validateJobID(c) {
 		return
 	}
-	job, err := a.jobs.Get(c, c.Param("id"))
+	job, err := a.jobs.Get(c.Request.Context(), c.Param("id"))
 	if err != nil {
 		writeRepositoryError(c, err)
 		return
@@ -153,7 +154,7 @@ func (a *API) archive(c *gin.Context) {
 	if !validateJobID(c) {
 		return
 	}
-	if err := a.jobs.Archive(c, c.Param("id")); err != nil {
+	if err := a.jobs.Archive(c.Request.Context(), c.Param("id")); err != nil {
 		if errors.Is(err, domain.ErrNotArchivable) {
 			writeError(c, http.StatusConflict, "JOB_NOT_ARCHIVABLE", err.Error())
 			return
@@ -168,7 +169,7 @@ func (a *API) events(c *gin.Context) {
 	if !validateJobID(c) {
 		return
 	}
-	events, err := a.jobs.Events(c, c.Param("id"))
+	events, err := a.jobs.Events(c.Request.Context(), c.Param("id"))
 	if err != nil {
 		writeRepositoryError(c, err)
 		return
@@ -186,7 +187,7 @@ func (a *API) command(c *gin.Context) {
 		writeError(c, http.StatusBadRequest, "INVALID_ACTION", "action is not supported")
 		return
 	}
-	job, err := a.jobs.Command(c, c.Param("id"), c.Param("action"))
+	job, err := a.jobs.Command(c.Request.Context(), c.Param("id"), c.Param("action"))
 	if err != nil {
 		if errors.Is(err, domain.ErrNamespaceOutOfScope) {
 			writeError(c, http.StatusConflict, "NAMESPACE_OUT_OF_SCOPE", err.Error())
@@ -223,7 +224,7 @@ func (a *API) updateQueue(c *gin.Context) {
 		return
 	}
 	job, err := a.jobs.UpdateQueue(
-		c, c.Param("id"), request.Priority, request.Position, request.Version,
+		c.Request.Context(), c.Param("id"), request.Priority, request.Position, request.Version,
 		request.ScheduledFor,
 	)
 	if err != nil {
@@ -272,7 +273,7 @@ func (a *API) reorder(c *gin.Context) {
 		}
 		seen[id] = struct{}{}
 	}
-	version, err := a.jobs.Reorder(c, request.JobIDs, request.Version)
+	version, err := a.jobs.Reorder(c.Request.Context(), request.JobIDs, request.Version)
 	if err != nil {
 		if errors.Is(err, domain.ErrNamespaceOutOfScope) {
 			writeError(c, http.StatusConflict, "NAMESPACE_OUT_OF_SCOPE", err.Error())
@@ -292,9 +293,10 @@ func (a *API) stream(c *gin.Context) {
 
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
+	ctx := c.Request.Context()
 	lastPayload := ""
 	for {
-		jobs, err := a.repository.List(c, ports.JobFilter{})
+		jobs, err := a.repository.List(ctx, ports.JobFilter{})
 		if err != nil {
 			return
 		}
@@ -309,7 +311,7 @@ func (a *API) stream(c *gin.Context) {
 			lastPayload = string(payload)
 		}
 		select {
-		case <-c.Request.Context().Done():
+		case <-ctx.Done():
 			return
 		case <-ticker.C:
 		}
