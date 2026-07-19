@@ -16,6 +16,15 @@ const template = (command: string) => ({
   },
 });
 
+test.beforeAll(async ({ request, baseURL }) => {
+  const response = await request.post('/auth/local', {
+    form: { username: 'admin', password: 'admin', returnTo: '/' },
+    headers: { Origin: new URL(baseURL ?? 'http://localhost:3000').origin },
+    maxRedirects: 0,
+  });
+  expect(response.status()).toBe(303);
+});
+
 async function createJob(
   request: APIRequestContext,
   name: string,

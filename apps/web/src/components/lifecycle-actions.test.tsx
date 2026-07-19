@@ -7,6 +7,7 @@ import { LifecycleActions } from './lifecycle-actions';
 
 const job: Job = {
   id: '46c9c2e2-ab4f-4bf6-9191-743d28b57412',
+  projectId: 'reporting',
   name: 'daily-report',
   namespace: 'default',
   priority: 0,
@@ -16,7 +17,6 @@ const job: Job = {
   managementMode: 'MANAGED',
   syncStatus: 'SYNCED',
   actionPending: false,
-  template: {},
   attempt: 1,
   version: 1,
   createdAt: '2026-07-18T00:00:00Z',

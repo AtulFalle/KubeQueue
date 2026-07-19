@@ -4,6 +4,1067 @@
  */
 
 export interface paths {
+    "/login-methods": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List enabled browser login methods
+         * @description Returns only secret-free methods that are currently enabled and safe to advertise before authentication.
+         */
+        get: operations["listEnabledLoginMethods"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/oauth/login-attempts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start a server-side OAuth login attempt
+         * @description Internal BFF endpoint authenticated with the installation BFF key.
+         */
+        post: operations["createOAuthLoginAttempt"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/oauth/login-attempts/consume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Consume a server-side OAuth login attempt
+         * @description Internal one-time BFF callback endpoint.
+         */
+        post: operations["consumeOAuthLoginAttempt"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/oauth/token-exchange": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Exchange an OIDC authorization code
+         * @description Internal BFF endpoint that exchanges an authorization code and PKCE verifier with an enabled dynamic provider. The confidential client secret is never returned.
+         */
+        post: operations["exchangeOIDCAuthorizationCode"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/oauth/providers/{identityProviderId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get OIDC browser authorization metadata
+         * @description Internal BFF endpoint returning only enabled provider metadata needed to start Authorization Code with PKCE. It never returns client credentials.
+         */
+        get: operations["getOIDCAuthorizationMetadata"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create a browser session
+         * @description Exchanges an independently validated bearer identity and server-side OAuth tokens for an opaque browser session. This endpoint is for the trusted BFF only.
+         */
+        post: operations["createBrowserSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sessions/local": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create a browser session from local credentials
+         * @description Validates a local human username and password and creates an opaque browser session. This endpoint is available only to the trusted BFF; it never returns the password or a reusable API bearer credential.
+         */
+        post: operations["createLocalBrowserSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the current browser session
+         * @description Returns bounded metadata and the CSRF value for the authenticated browser session.
+         */
+        get: operations["getBrowserSession"];
+        put?: never;
+        post?: never;
+        /**
+         * Revoke the current browser session
+         * @description Revokes the authenticated browser session after origin and CSRF validation.
+         */
+        delete: operations["revokeBrowserSession"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/session/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Refresh the current browser session OAuth tokens
+         * @description Refreshes provider tokens entirely inside the control plane and returns only bounded session metadata.
+         */
+        post: operations["refreshBrowserSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/local-account/password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Change the current local account password
+         * @description Replaces the authenticated local human's password after verifying the current password, revokes the account's other sessions, and rotates the current session.
+         */
+        put: operations["changeCurrentLocalAccountPassword"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/principals/{principalId}/local-account/password-reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reset a local account password
+         * @description Allows an installation owner to set a new password for a local human account. The operation is audited, revokes every session for the target account, and never returns the password.
+         */
+        post: operations["resetLocalAccountPassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/setup/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get bounded first-time setup readiness
+         * @description Returns only observable, secret-free readiness and whether guarded setup can still be claimed; it never returns password or credential material.
+         */
+        get: operations["getSetupStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/setup/claim": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Claim first-time setup
+         * @description Atomically creates the installation, local human installation owner, initial project access, bounded policy, and quota. It is available only while no owner exists; concurrent claims have one winner and a failed claim creates no resources.
+         */
+        post: operations["claimSetup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/setup/recovery": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the post-setup recovery checklist
+         * @description Returns a secret-free operational checklist and completion state; local passwords and break-glass credentials are never included.
+         */
+        get: operations["getSetupRecovery"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/identity-providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List identity-provider status
+         * @description Returns secret-free identity-provider configuration and health status for Settings.
+         */
+        get: operations["listIdentityProviders"];
+        put?: never;
+        /**
+         * Configure an OIDC identity provider
+         * @description Creates a disabled OIDC provider. Secrets are accepted only as write-only input and are never returned.
+         */
+        post: operations["createIdentityProvider"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/identity-providers/{identityProviderId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                identityProviderId: components["parameters"]["IdentityProviderId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Get identity-provider status
+         * @description Returns a secret-free configuration, state, and latest bounded test result.
+         */
+        get: operations["getIdentityProvider"];
+        /**
+         * Update an OIDC identity provider
+         * @description Replaces the non-secret configuration using the current ETag. Omitting clientSecret preserves the stored secret; supplying it rotates the secret. The provider remains disabled until explicitly enabled.
+         */
+        put: operations["updateIdentityProvider"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/identity-providers/{identityProviderId}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Test an OIDC identity provider
+         * @description Tests discovery, JWKS, issuer, audience, algorithms, and redirect configuration without enabling login, then records only a bounded secret-free result using the current ETag.
+         */
+        post: operations["testIdentityProvider"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/identity-providers/{identityProviderId}/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Enable an OIDC identity provider
+         * @description Enables browser login only after a successful current-version test. The transition uses the current ETag and is rejected if no usable installation-owner login would remain.
+         */
+        post: operations["enableIdentityProvider"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/identity-providers/{identityProviderId}/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Disable an OIDC identity provider
+         * @description Disables browser login using the current ETag. The transition is rejected if it would remove the final enabled login method or the final usable installation-owner login path.
+         */
+        post: operations["disableIdentityProvider"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/access/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the current principal and effective permissions
+         * @description Returns the authenticated local principal and effective installation/project permissions.
+         */
+        get: operations["getCurrentAccess"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List projects
+         * @description Returns one bounded page of projects in this installation.
+         */
+        get: operations["listProjects"];
+        put?: never;
+        /**
+         * Create a project
+         * @description Creates one local project with a stable identifier.
+         */
+        post: operations["createProject"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectPathId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Get a project
+         * @description Returns one authorized project without enumerating inaccessible identifiers.
+         */
+        get: operations["getProject"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/namespace-bindings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectPathId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * List project namespace bindings
+         * @description Returns one bounded page of desired namespace bindings with authority observed by the worker.
+         */
+        get: operations["listProjectNamespaceBindings"];
+        put?: never;
+        /**
+         * Bind a namespace to a project
+         * @description Creates desired local ownership when the namespace is not already bound to a project.
+         */
+        post: operations["createProjectNamespaceBinding"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/namespace-bindings/{namespace}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectPathId"];
+                namespace: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Reassign a namespace to a project
+         * @description Reassigns desired ownership only when no active managed workload exists in the namespace.
+         */
+        put: operations["reassignProjectNamespaceBinding"];
+        post?: never;
+        /**
+         * Remove a project namespace binding
+         * @description Removes desired ownership only when the namespace belongs to this project and no active managed workload exists.
+         */
+        delete: operations["removeProjectNamespaceBinding"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/queue/order": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectPathId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Reorder a project queue
+         * @description Reorders the exact queued set for one project using the global queue version while preserving every other project's relative and absolute positions.
+         */
+        put: operations["reorderProjectQueue"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/installation/admission-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the installation admission policy
+         * @description Returns the current direct installation policy fields and immutable version.
+         */
+        get: operations["getInstallationAdmissionPolicy"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update the installation admission policy
+         * @description Creates the next immutable policy version using the current strong ETag.
+         */
+        patch: operations["updateInstallationAdmissionPolicy"];
+        trace?: never;
+    };
+    "/projects/{projectId}/admission-settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectPathId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Get project admission settings
+         * @description Returns the direct project policy overlay and positive fair-scheduling weight.
+         */
+        get: operations["getProjectAdmissionSettings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update project admission settings
+         * @description Atomically creates the next project policy version, updates scheduling weight, and appends audit using the current strong ETag.
+         */
+        patch: operations["updateProjectAdmissionSettings"];
+        trace?: never;
+    };
+    "/projects/{projectId}/quota-usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectPathId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Get current project quota usage
+         * @description Returns the current project-level concurrent, queued, and retained counters.
+         */
+        get: operations["getProjectQuotaUsage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{projectId}/admission-decisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectPathId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * List recent project admission decisions
+         * @description Returns newest-first accepted decisions and current bounded rejection reasons.
+         */
+        get: operations["listProjectAdmissionDecisions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/teams": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List teams
+         * @description Returns one bounded page of local installation teams.
+         */
+        get: operations["listTeams"];
+        put?: never;
+        /**
+         * Create a team
+         * @description Creates one local team with a stable identifier.
+         */
+        post: operations["createTeam"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/teams/{teamId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                teamId: components["parameters"]["TeamId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Get a team
+         * @description Returns one team in this installation.
+         */
+        get: operations["getTeam"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/teams/{teamId}/memberships": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                teamId: components["parameters"]["TeamId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * List team memberships
+         * @description Returns one bounded page of manual and OIDC-managed team memberships.
+         */
+        get: operations["listTeamMemberships"];
+        put?: never;
+        /**
+         * Add a manual team membership
+         * @description Adds an existing local principal to the team without changing OIDC-managed membership.
+         */
+        post: operations["createTeamMembership"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/teams/{teamId}/memberships/{principalId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                teamId: components["parameters"]["TeamId"];
+                principalId: components["parameters"]["PrincipalId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Get a team membership
+         * @description Returns one principal membership in the selected team.
+         */
+        get: operations["getTeamMembership"];
+        put?: never;
+        post?: never;
+        /**
+         * Remove a manual team membership
+         * @description Removes a manual membership while preserving owner and OIDC-managed invariants.
+         */
+        delete: operations["deleteTeamMembership"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/access/effective-grants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List effective grants for one local principal
+         * @description Resolves direct and inherited team grants for one known local principal.
+         */
+        get: operations["listEffectiveGrants"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/role-definitions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List built-in and custom role definitions
+         * @description Returns one bounded page from the fixed built-in and installation-defined role set.
+         */
+        get: operations["listRoleDefinitions"];
+        put?: never;
+        /**
+         * Create a custom role definition
+         * @description Creates revision 1 after applying the creator delegation ceiling.
+         */
+        post: operations["createRoleDefinition"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/role-definitions/{roleDefinitionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                roleDefinitionId: components["parameters"]["RoleDefinitionId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Get a role definition
+         * @description Returns one built-in or custom role definition.
+         */
+        get: operations["getRoleDefinition"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Create the next custom-role revision
+         * @description Requires the quoted current revision in If-Match. Built-in roles cannot be updated.
+         */
+        patch: operations["updateRoleDefinition"];
+        trace?: never;
+    };
+    "/role-bindings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List role bindings
+         * @description Returns one bounded page of installation/project role assignments.
+         */
+        get: operations["listRoleBindings"];
+        put?: never;
+        /**
+         * Create a role binding
+         * @description Assigns one role to one principal or team at one installation/project scope.
+         */
+        post: operations["createRoleBinding"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/role-bindings/{roleBindingId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                roleBindingId: components["parameters"]["RoleBindingId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Get a role binding
+         * @description Returns one role assignment.
+         */
+        get: operations["getRoleBinding"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete a role binding
+         * @description Removes one role assignment while preserving the final installation owner.
+         */
+        delete: operations["deleteRoleBinding"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/service-accounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List service accounts
+         * @description Returns one bounded page of local service accounts without credential material.
+         */
+        get: operations["listServiceAccounts"];
+        put?: never;
+        /**
+         * Create a service account
+         * @description Creates one installation- or project-scoped non-interactive principal.
+         */
+        post: operations["createServiceAccount"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/service-accounts/{serviceAccountId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serviceAccountId: components["parameters"]["ServiceAccountId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Get a service account
+         * @description Returns one service account without credential material.
+         */
+        get: operations["getServiceAccount"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/service-accounts/{serviceAccountId}/oidc-identity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serviceAccountId: components["parameters"]["ServiceAccountId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Bind an OIDC client identity
+         * @description Binds one exact configured issuer and immutable subject to an existing service account. No client secret is stored.
+         */
+        put: operations["bindServiceAccountOIDCIdentity"];
+        post?: never;
+        /**
+         * Remove an OIDC client identity binding
+         * @description Removes the service account's OIDC client-credentials identity without changing native credentials.
+         */
+        delete: operations["removeServiceAccountOIDCIdentity"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/service-accounts/{serviceAccountId}/credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serviceAccountId: components["parameters"]["ServiceAccountId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * List service-account credential metadata
+         * @description Returns bounded prefixes and lifecycle metadata, never plaintext tokens or digests.
+         */
+        get: operations["listServiceAccountCredentials"];
+        put?: never;
+        /**
+         * Issue a one-time service-account credential
+         * @description Creates a bounded credential and returns its plaintext exactly once.
+         */
+        post: operations["issueServiceAccountCredential"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/service-accounts/{serviceAccountId}/credentials/{credentialId}/rotate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serviceAccountId: components["parameters"]["ServiceAccountId"];
+                credentialId: components["parameters"]["CredentialId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rotate a service-account credential
+         * @description Rotates once; callers must not automatically retry an unknown outcome because plaintext is not recoverable.
+         */
+        post: operations["rotateServiceAccountCredential"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/service-accounts/{serviceAccountId}/credentials/{credentialId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serviceAccountId: components["parameters"]["ServiceAccountId"];
+                credentialId: components["parameters"]["CredentialId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Get service-account credential metadata
+         * @description Returns one credential's non-secret lifecycle metadata.
+         */
+        get: operations["getServiceAccountCredential"];
+        put?: never;
+        post?: never;
+        /**
+         * Revoke a service-account credential
+         * @description Idempotently revokes one credential.
+         */
+        delete: operations["revokeServiceAccountCredential"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/audit/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search local audit events
+         * @description Returns one bounded page from the customer-operated local audit record in stable occurredAt then id order. Inaccessible project scope returns an empty page.
+         */
+        get: operations["searchAuditEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/audit/events/{auditEventId}": {
+        parameters: {
+            query: {
+                /** @description Customer-operated installation whose local audit record is queried. */
+                installationId: components["parameters"]["AuditInstallationId"];
+            };
+            header?: never;
+            path: {
+                auditEventId: components["parameters"]["AuditEventId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Get a local audit event
+         * @description Returns one event only when it exists in the caller's authorized installation and project scope; all other cases return the same not-found response.
+         */
+        get: operations["getAuditEvent"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/audit/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export local audit events
+         * @description Returns an ordered bounded page from the local audit record for customer-owned export tooling. Follow nextCursor until null while preserving the same filters.
+         */
+        get: operations["exportAuditEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/status": {
         parameters: {
             query?: never;
@@ -24,6 +1085,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/support/diagnostics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get sanitized local support diagnostics
+         * @description Returns a bounded, structurally redacted local diagnostic snapshot without credentials, connection strings, manifests, environment values, or raw errors.
+         */
+        get: operations["getSupportDiagnostics"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/jobs": {
         parameters: {
             query?: never;
@@ -33,13 +1114,13 @@ export interface paths {
         };
         /**
          * List jobs
-         * @description Returns jobs matching the supplied inventory filters.
+         * @description Returns one bounded page of jobs matching the supplied inventory filters. Cursors are opaque and valid only with the same filters and sort.
          */
         get: operations["listJobs"];
         put?: never;
         /**
          * Submit a job
-         * @description Persists a standard Kubernetes Job template for queued execution.
+         * @description Persists a standard Kubernetes Job template for queued execution. Reusing the same bounded idempotency key with the same intent returns the original Job; reusing it for different intent is rejected.
          */
         post: operations["createJob"];
         delete?: never;
@@ -57,7 +1138,7 @@ export interface paths {
         };
         /**
          * Get job inventory facets
-         * @description Returns global inventory counts and filter values independently from active filters.
+         * @description Returns authorized inventory counts and bounded filter values independently from active filters.
          */
         get: operations["getJobFacets"];
         put?: never;
@@ -94,6 +1175,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/jobs/{jobId}/manifest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jobId: components["parameters"]["JobId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Get a job manifest
+         * @description Returns the stored Kubernetes Job template when the caller has independent manifest access.
+         */
+        get: operations["getJobManifest"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/jobs/{jobId}/events": {
         parameters: {
             query?: never;
@@ -105,7 +1208,7 @@ export interface paths {
         };
         /**
          * List job events
-         * @description Returns immutable lifecycle events for one job.
+         * @description Returns one newest-first page of immutable lifecycle events for one job. Cursors are opaque, job-specific continuation tokens.
          */
         get: operations["listJobEvents"];
         put?: never;
@@ -210,7 +1313,12 @@ export interface paths {
         };
         /**
          * Stream job changes
-         * @description Streams job inventory snapshots as server-sent events.
+         * @description Streams authorization-scoped job invalidations as server-sent events. Every message uses
+         *     the `jobs` event name and a decimal event ID equal to its cursor. The first message is a
+         *     `ready` payload. Without `Last-Event-ID`, its cursor is the latest authorized change and
+         *     only later changes are emitted. With `Last-Event-ID`, changes after that cursor are replayed.
+         *     An `invalidate` payload contains the unique job IDs changed in a bounded backend page;
+         *     clients refetch affected resources and persist its cursor for reconnection.
          */
         get: operations["streamEvents"];
         put?: never;
@@ -225,6 +1333,590 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        RequestId: string;
+        StableId: string;
+        AuditIdentifier: string;
+        /** @enum {string} */
+        AuditAuthorizationDecision: "ALLOW" | "DENY";
+        /** @enum {string} */
+        AuditResult: "SUCCESS" | "FAILURE";
+        /** @enum {string} */
+        AuditAuthenticationMethod: "OIDC_CLIENT_CREDENTIALS" | "OIDC_SESSION" | "SERVICE_ACCOUNT_TOKEN" | "BREAK_GLASS" | "LEGACY_TOKEN";
+        /** @enum {string} */
+        AuditSourceProvenance: "DIRECT_PEER" | "TRUSTED_PROXY";
+        AuditActor: {
+            principalId: components["schemas"]["AuditIdentifier"];
+            authenticationMethod: components["schemas"]["AuditAuthenticationMethod"];
+            credentialId: components["schemas"]["AuditIdentifier"];
+            effectiveGroups: components["schemas"]["AuditIdentifier"][];
+        };
+        AuditTarget: {
+            type: string;
+            id: components["schemas"]["AuditIdentifier"];
+        };
+        AuditScope: {
+            installationId: components["schemas"]["AuditIdentifier"];
+            projectId?: components["schemas"]["AuditIdentifier"];
+            teamId?: components["schemas"]["AuditIdentifier"];
+            namespace?: string;
+        };
+        AuditSource: {
+            address: string;
+            provenance: components["schemas"]["AuditSourceProvenance"];
+            userAgent: string;
+        };
+        AuditSummary: {
+            state?: string;
+            changedFields: string[];
+            redactionCount: number;
+            truncated: boolean;
+        };
+        AuditEvent: {
+            id: components["schemas"]["AuditIdentifier"];
+            /** Format: date-time */
+            occurredAt: string;
+            requestId: components["schemas"]["AuditIdentifier"];
+            traceId: components["schemas"]["AuditIdentifier"];
+            actor: components["schemas"]["AuditActor"];
+            action: string;
+            target: components["schemas"]["AuditTarget"];
+            scope: components["schemas"]["AuditScope"];
+            decision: components["schemas"]["AuditAuthorizationDecision"];
+            result: components["schemas"]["AuditResult"];
+            reason: string;
+            source: components["schemas"]["AuditSource"];
+            before?: components["schemas"]["AuditSummary"];
+            after?: components["schemas"]["AuditSummary"];
+        };
+        AuditEventPage: {
+            items: components["schemas"]["AuditEvent"][];
+            nextCursor: string | null;
+        };
+        /** @enum {string} */
+        AccessScopeType: "INSTALLATION" | "PROJECT";
+        /** @enum {string} */
+        Permission: "jobs.list" | "jobs.read" | "jobs.manifest.read" | "jobs.submit" | "jobs.pause" | "jobs.resume" | "jobs.terminate" | "jobs.retry" | "jobs.take-control" | "jobs.archive" | "job-events.read" | "events.stream.read" | "queue.read" | "queue.entry.update" | "queue.project.reorder" | "queue.global.reorder" | "projects.manage" | "namespace-bindings.manage" | "members.read" | "members.manage" | "roles.read" | "roles.assign" | "roles.define" | "service-accounts.manage" | "tokens.manage" | "policies.read" | "policies.manage" | "quotas.manage" | "audit.read" | "audit.export" | "system.status.read" | "support.diagnostics.read";
+        /** @enum {string} */
+        PrincipalKind: "HUMAN" | "SERVICE_ACCOUNT" | "LEGACY_ADMIN";
+        /** @enum {string} */
+        PrincipalStatus: "ACTIVE" | "DISABLED";
+        PrincipalSummary: {
+            id: components["schemas"]["StableId"];
+            kind: components["schemas"]["PrincipalKind"];
+            displayName: string;
+            status: components["schemas"]["PrincipalStatus"];
+        };
+        EffectivePermission: {
+            permission: components["schemas"]["Permission"];
+            scopeType: components["schemas"]["AccessScopeType"];
+            projectId?: components["schemas"]["StableId"];
+        };
+        CurrentAccess: {
+            installationId: components["schemas"]["StableId"];
+            principal: components["schemas"]["PrincipalSummary"];
+            /** @description Whether the built-in installation-owner grant applies. */
+            installationOwner: boolean;
+            permissions: components["schemas"]["EffectivePermission"][];
+        };
+        CursorPage: {
+            nextCursor: components["schemas"]["StableId"] | null;
+        };
+        CredentialCursorPage: {
+            /** Format: uuid */
+            nextCursor: string | null;
+        };
+        Project: {
+            id: components["schemas"]["StableId"];
+            installationId: components["schemas"]["StableId"];
+            name: string;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        /** @enum {string} */
+        NamespaceAuthorityState: "READY" | "PENDING" | "UNAUTHORIZED" | "UNSYNCHRONIZED" | "OUT_OF_SCOPE";
+        NamespaceBinding: {
+            id: string;
+            projectId: components["schemas"]["StableId"];
+            namespace: string;
+            /** @description True while local project ownership is requested. */
+            desired: boolean;
+            authorityState: components["schemas"]["NamespaceAuthorityState"];
+            informerSynced: boolean;
+            authorized: boolean;
+            message?: string;
+            /** Format: date-time */
+            observedAt?: string | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        CreateNamespaceBinding: {
+            namespace: string;
+        };
+        NamespaceBindingPage: components["schemas"]["CursorPage"] & {
+            items: components["schemas"]["NamespaceBinding"][];
+        };
+        ReorderQueue: {
+            jobIds: string[];
+            version: number;
+        };
+        QueueVersion: {
+            version: number;
+        };
+        QuotaLimit: {
+            maxConcurrent?: number;
+            maxQueued?: number;
+            maxRetained?: number;
+        };
+        AdmissionQuotaLimits: {
+            global?: components["schemas"]["QuotaLimit"];
+            project?: components["schemas"]["QuotaLimit"];
+            namespace?: components["schemas"]["QuotaLimit"];
+        };
+        AdmissionPriority: {
+            min: number;
+            max: number;
+            default: number;
+        };
+        AdmissionPolicyRules: {
+            quotas?: components["schemas"]["AdmissionQuotaLimits"];
+            priority?: components["schemas"]["AdmissionPriority"];
+            maxDelayedStartSeconds?: number;
+            maxExecutionDurationSeconds?: number;
+            allowedImageRegistries?: string[];
+        };
+        AdmissionPolicy: {
+            id: string;
+            version: number;
+            /** @enum {string} */
+            scopeType: "INSTALLATION" | "PROJECT";
+            projectId?: components["schemas"]["StableId"];
+            rules: components["schemas"]["AdmissionPolicyRules"];
+        };
+        UpdateAdmissionPolicy: {
+            rules: components["schemas"]["AdmissionPolicyRules"];
+        };
+        ProjectAdmissionSettings: {
+            projectId: components["schemas"]["StableId"];
+            policyId?: string | null;
+            policyVersion: number;
+            schedulingWeight: number;
+            schedulingVersion: number;
+            rules: components["schemas"]["AdmissionPolicyRules"];
+        };
+        UpdateProjectAdmissionSettings: {
+            schedulingWeight: number;
+            rules: components["schemas"]["AdmissionPolicyRules"];
+        };
+        QuotaCounters: {
+            concurrent: number;
+            queued: number;
+            retained: number;
+        };
+        AdmissionDecision: {
+            id: string;
+            projectId: components["schemas"]["StableId"];
+            /** Format: uuid */
+            jobId: string;
+            accepted: boolean;
+            reason: string;
+            policyVersion?: number;
+            schedulingWeight?: number;
+            /** Format: date-time */
+            decidedAt: string;
+        };
+        AdmissionDecisionPage: {
+            items: components["schemas"]["AdmissionDecision"][];
+            nextCursor: string | null;
+        };
+        CreateProject: {
+            id: components["schemas"]["StableId"];
+            name: string;
+        };
+        ProjectPage: components["schemas"]["CursorPage"] & {
+            items: components["schemas"]["Project"][];
+        };
+        Team: {
+            id: components["schemas"]["StableId"];
+            installationId: components["schemas"]["StableId"];
+            name: string;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        CreateTeam: {
+            id: components["schemas"]["StableId"];
+            name: string;
+        };
+        TeamPage: components["schemas"]["CursorPage"] & {
+            items: components["schemas"]["Team"][];
+        };
+        TeamMembership: {
+            teamId: components["schemas"]["StableId"];
+            principalId: components["schemas"]["StableId"];
+            /** @enum {string} */
+            source: "MANUAL" | "OIDC";
+            sourceIdentityProviderId?: components["schemas"]["StableId"];
+            /** Format: date-time */
+            createdAt: string;
+        };
+        CreateTeamMembership: {
+            principalId: components["schemas"]["StableId"];
+        };
+        TeamMembershipPage: components["schemas"]["CursorPage"] & {
+            items: components["schemas"]["TeamMembership"][];
+        };
+        RoleDefinition: {
+            id: components["schemas"]["StableId"];
+            installationId: components["schemas"]["StableId"];
+            name: string;
+            scopeType: components["schemas"]["AccessScopeType"];
+            permissions: components["schemas"]["Permission"][];
+            builtIn: boolean;
+            /** Format: int64 */
+            revision: number;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        CreateRoleDefinition: {
+            id: components["schemas"]["StableId"];
+            name: string;
+            scopeType: components["schemas"]["AccessScopeType"];
+            permissions: components["schemas"]["Permission"][];
+        };
+        UpdateRoleDefinition: {
+            name: string;
+            scopeType: components["schemas"]["AccessScopeType"];
+            permissions: components["schemas"]["Permission"][];
+        };
+        RoleDefinitionPage: components["schemas"]["CursorPage"] & {
+            items: components["schemas"]["RoleDefinition"][];
+        };
+        /** @enum {string} */
+        RoleBindingSubjectKind: "PRINCIPAL" | "TEAM";
+        RoleBindingSubject: {
+            kind: components["schemas"]["RoleBindingSubjectKind"];
+            id: components["schemas"]["StableId"];
+        };
+        RoleBindingScope: {
+            scopeType: components["schemas"]["AccessScopeType"];
+            projectId?: components["schemas"]["StableId"];
+        };
+        RoleBinding: {
+            id: components["schemas"]["StableId"];
+            installationId: components["schemas"]["StableId"];
+            roleDefinitionId: components["schemas"]["StableId"];
+            scope: components["schemas"]["RoleBindingScope"];
+            subject: components["schemas"]["RoleBindingSubject"];
+            /** Format: date-time */
+            createdAt: string;
+        };
+        CreateRoleBinding: {
+            id: components["schemas"]["StableId"];
+            roleDefinitionId: components["schemas"]["StableId"];
+            scope: components["schemas"]["RoleBindingScope"];
+            subject: components["schemas"]["RoleBindingSubject"];
+        };
+        RoleBindingPage: components["schemas"]["CursorPage"] & {
+            items: components["schemas"]["RoleBinding"][];
+        };
+        EffectiveGrant: {
+            roleBindingId: components["schemas"]["StableId"];
+            roleDefinitionId: components["schemas"]["StableId"];
+            roleName: string;
+            scope: components["schemas"]["RoleBindingScope"];
+            permissions: components["schemas"]["Permission"][];
+            /** @enum {string} */
+            source: "DIRECT" | "TEAM";
+            viaTeamId?: components["schemas"]["StableId"];
+        };
+        EffectiveGrantPage: components["schemas"]["CursorPage"] & {
+            principalId: components["schemas"]["StableId"];
+            items: components["schemas"]["EffectiveGrant"][];
+        };
+        ServiceAccount: {
+            principalId: components["schemas"]["StableId"];
+            installationId: components["schemas"]["StableId"];
+            projectId?: components["schemas"]["StableId"] | null;
+            displayName: string;
+            oidcIdentity?: components["schemas"]["ServiceAccountOIDCIdentity"] | null;
+            createdByPrincipalId: components["schemas"]["StableId"];
+            /** Format: date-time */
+            createdAt: string;
+        };
+        ServiceAccountOIDCIdentity: {
+            /** Format: uri */
+            issuer: string;
+            subject: string;
+        };
+        BindServiceAccountOIDCIdentity: components["schemas"]["ServiceAccountOIDCIdentity"];
+        CreateServiceAccount: {
+            principalId: components["schemas"]["StableId"];
+            projectId?: components["schemas"]["StableId"];
+            displayName: string;
+        };
+        ServiceAccountPage: components["schemas"]["CursorPage"] & {
+            items: components["schemas"]["ServiceAccount"][];
+        };
+        /** @enum {string} */
+        CredentialStatus: "ACTIVE" | "OVERLAP" | "EXPIRED" | "REVOKED";
+        ServiceAccountCredential: {
+            /** Format: uuid */
+            id: string;
+            serviceAccountPrincipalId: components["schemas"]["StableId"];
+            safePrefix: string;
+            permissions: components["schemas"]["Permission"][];
+            status: components["schemas"]["CredentialStatus"];
+            /** Format: date-time */
+            expiresAt: string;
+            /** Format: date-time */
+            lastUsedAt?: string;
+            /** Format: date-time */
+            rotatedAt?: string;
+            /** Format: date-time */
+            overlapExpiresAt?: string;
+            /** Format: date-time */
+            revokedAt?: string;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        ServiceAccountCredentialPage: components["schemas"]["CredentialCursorPage"] & {
+            items: components["schemas"]["ServiceAccountCredential"][];
+        };
+        IssueServiceAccountCredential: {
+            permissions: components["schemas"]["Permission"][];
+            /** Format: date-time */
+            expiresAt: string;
+        };
+        IssuedServiceAccountCredential: {
+            credential: components["schemas"]["ServiceAccountCredential"];
+            /** @description Plaintext credential returned exactly once and never available from reads. */
+            token: string;
+        };
+        RotateServiceAccountCredential: {
+            permissions: components["schemas"]["Permission"][];
+            /** Format: date-time */
+            expiresAt: string;
+            /** @default 300 */
+            overlapSeconds: number;
+        };
+        RotatedServiceAccountCredential: {
+            /** Format: uuid */
+            previousCredentialId: string;
+            /** Format: date-time */
+            overlapExpiresAt?: string;
+            replacement: components["schemas"]["ServiceAccountCredential"];
+            /** @description Replacement plaintext returned exactly once for this rotation response. */
+            token: string;
+        };
+        SetupReadiness: {
+            ready: boolean;
+            message?: string;
+        };
+        SetupStatus: {
+            available: boolean;
+            /** @enum {string} */
+            state: "AVAILABLE" | "COMPLETED" | "UNAVAILABLE";
+            api: components["schemas"]["SetupReadiness"];
+            database: components["schemas"]["SetupReadiness"];
+            schema: components["schemas"]["SetupReadiness"];
+            worker: components["schemas"]["SetupReadiness"];
+            kubernetesAuthority: components["schemas"]["SetupReadiness"];
+            release: components["schemas"]["SetupReadiness"];
+            publicUrl: components["schemas"]["SetupReadiness"];
+        };
+        SetupPolicy: {
+            globalConcurrency: number;
+            namespaceConcurrency: number;
+            queueCapacity: number;
+            minimumPriority: number;
+            maximumPriority: number;
+            maximumDelaySeconds: number;
+            maximumRunningJobs: number;
+            maximumQueuedJobs: number;
+        };
+        /** @default admin */
+        LocalUsername: string;
+        /** @description Plaintext accepted only for password verification or replacement and never persisted, logged, audited, or returned. */
+        LocalPassword: string;
+        /** @description Existing plaintext credential accepted only for verification and never persisted, logged, audited, or returned. */
+        LocalPasswordCredential: string;
+        SetupLocalAdmin: {
+            username: components["schemas"]["LocalUsername"];
+            password: components["schemas"]["LocalPassword"];
+        };
+        SetupClaimRequest: {
+            installationName: string;
+            localAdmin: components["schemas"]["SetupLocalAdmin"];
+            projectName: string;
+            namespaces: string[];
+            policy: components["schemas"]["SetupPolicy"];
+        };
+        SetupClaim: {
+            installationId: components["schemas"]["StableId"];
+            ownerPrincipalId: components["schemas"]["StableId"];
+            username: components["schemas"]["LocalUsername"];
+            /** @enum {string} */
+            status: "COMPLETED";
+            /** Format: date-time */
+            createdAt: string;
+        };
+        SetupRecovery: {
+            completed: boolean;
+            checklist: string[];
+        };
+        LoginMethod: {
+            /** @enum {string} */
+            type: "LOCAL" | "OIDC";
+            id: string;
+            label: string;
+        };
+        LoginMethodList: {
+            items: components["schemas"]["LoginMethod"][];
+        };
+        /** @enum {string} */
+        IdentityProviderState: "DISABLED" | "ENABLED";
+        /** @enum {string} */
+        IdentityProviderTestStatus: "NOT_TESTED" | "PASSED" | "FAILED";
+        IdentityProviderTestResult: {
+            status: components["schemas"]["IdentityProviderTestStatus"];
+            /** Format: date-time */
+            testedAt?: string;
+            /** @description Bounded allowlisted result that contains no endpoint response body, token, secret, or raw error. */
+            message?: string;
+        };
+        OIDCIdentityProviderConfiguration: {
+            displayName: string;
+            /** Format: uri */
+            issuer: string;
+            audience: string;
+            clientId: string;
+            /** @description Omit on update to preserve the configured secret. */
+            clientSecret?: string;
+            /** @description Opaque customer-controlled secret reference. Mutually exclusive with clientSecret; KubeQueue does not mount Kubernetes credentials to resolve it. */
+            clientSecretReference?: string;
+            /** Format: uri */
+            redirectUri: string;
+            authorizedParty?: string;
+            allowedAlgorithms: ("RS256" | "RS384" | "RS512" | "ES256" | "ES384" | "ES512")[];
+            /** @enum {string} */
+            mappingType?: "GROUP" | "DOMAIN";
+            mappingValue?: string;
+            /** @default groups */
+            groupsClaim: string;
+            /** @default email */
+            emailClaim: string;
+            /** @default name */
+            nameClaim: string;
+            /** @default 300 */
+            cacheTtlSeconds: number;
+        };
+        ConfigureOIDCIdentityProvider: components["schemas"]["OIDCIdentityProviderConfiguration"];
+        CreateOIDCIdentityProvider: components["schemas"]["OIDCIdentityProviderConfiguration"] & {
+            id: string;
+        };
+        IdentityProvider: {
+            id: string;
+            /** @enum {string} */
+            type: "OIDC";
+            displayName: string;
+            /** Format: uri */
+            issuer: string;
+            audience: string;
+            clientId: string;
+            clientSecretConfigured: boolean;
+            /** Format: uri */
+            redirectUri: string;
+            authorizedParty?: string;
+            allowedAlgorithms: ("RS256" | "RS384" | "RS512" | "ES256" | "ES384" | "ES512")[];
+            /** @enum {string} */
+            mappingType?: "GROUP" | "DOMAIN";
+            mappingValue?: string;
+            groupsClaim?: string;
+            emailClaim?: string;
+            nameClaim?: string;
+            cacheTtlSeconds?: number;
+            state: components["schemas"]["IdentityProviderState"];
+            testResult: components["schemas"]["IdentityProviderTestResult"];
+            version: number;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        IdentityProviderList: {
+            items: components["schemas"]["IdentityProvider"][];
+        };
+        OAuthLoginAttempt: {
+            state: string;
+            nonce: string;
+            pkceVerifier: string;
+            returnTo: string;
+        };
+        ConsumedOAuthLoginAttempt: {
+            nonce: string;
+            pkceVerifier: string;
+            returnTo: string;
+        };
+        ExchangeOIDCAuthorizationCode: {
+            identityProviderId: string;
+            code: string;
+            pkceVerifier: string;
+            /** Format: uri */
+            redirectUri: string;
+        };
+        OIDCTokenExchange: {
+            identityProviderId: string;
+            accessToken: string;
+            refreshToken?: string;
+        };
+        OIDCAuthorizationMetadata: {
+            id: string;
+            /** Format: uri */
+            issuer: string;
+            clientId: string;
+            /** Format: uri */
+            redirectUri: string;
+            scopes: string;
+        };
+        CreateLocalBrowserSession: {
+            username: components["schemas"]["LocalUsername"];
+            password: components["schemas"]["LocalPasswordCredential"];
+        };
+        ChangeLocalPassword: {
+            currentPassword: components["schemas"]["LocalPasswordCredential"];
+            newPassword: components["schemas"]["LocalPassword"];
+        };
+        ResetLocalPassword: {
+            newPassword: components["schemas"]["LocalPassword"];
+        };
+        CreateBrowserSession: {
+            identityProviderId: string;
+            /** @enum {string} */
+            authenticationMethod: "OIDC";
+            refreshToken?: string;
+            accessToken: string;
+            rotateCredential?: string;
+        };
+        CreatedBrowserSession: {
+            credential: string;
+            session: components["schemas"]["BrowserSession"];
+        };
+        BrowserSession: {
+            principalId: string;
+            installationId: string;
+            identityProviderId?: string;
+            /** @enum {string} */
+            authenticationMethod: "LOCAL" | "OIDC";
+            /** @description Non-secret, session-bound double-submit value for browser mutations. */
+            csrfToken: string;
+            /** Format: date-time */
+            idleExpiresAt: string;
+            /** Format: date-time */
+            absoluteExpiresAt: string;
+        };
+        BrowserSessionRefresh: components["schemas"]["BrowserSession"] & {
+            /** @description Whether provider tokens were renewed during this request. */
+            refreshed: boolean;
+        };
         /** @enum {string} */
         WorkerState: "ready" | "degraded" | "unavailable";
         NamespaceAuthorityStatus: {
@@ -267,6 +1959,47 @@ export interface components {
                 message: string;
             }[];
         };
+        SupportDiagnostics: {
+            /** Format: date-time */
+            generatedAt: string;
+            versions: {
+                api: string;
+                worker: string;
+            };
+            schema: {
+                healthy: boolean;
+                current: string;
+                latest: string;
+            };
+            leadership: {
+                held: boolean;
+                /** Format: int64 */
+                generation: number;
+            };
+            worker: {
+                state: components["schemas"]["WorkerState"];
+                /** Format: date-time */
+                heartbeatAt?: string;
+                /** Format: date-time */
+                lastSuccessfulReconciliationAt?: string;
+            };
+            watch: {
+                /** @enum {string} */
+                mode: "selected" | "all";
+                effectiveNamespaces: string[];
+                excludedNamespaces: string[];
+                namespaces: components["schemas"]["NamespaceAuthorityStatus"][];
+            };
+            recentErrorClasses: {
+                class: string;
+                /** Format: int64 */
+                count: number;
+                /** Format: date-time */
+                lastSeenAt?: string;
+            }[];
+            /** Format: int64 */
+            auditWriterOverloadCount: number;
+        };
         /** @enum {string} */
         JobState: "CREATED" | "QUEUED" | "RUNNING" | "PAUSED" | "COMPLETED" | "FAILED" | "CANCELLED";
         /** @enum {string} */
@@ -276,6 +2009,8 @@ export interface components {
         Job: {
             /** Format: uuid */
             id: string;
+            /** Format: uuid */
+            projectId: string;
             /** Format: uuid */
             parentId?: string;
             name: string;
@@ -298,9 +2033,6 @@ export interface components {
             /** Format: date-time */
             scheduledFor?: string;
             kubernetesUid?: string;
-            template: {
-                [key: string]: unknown;
-            };
             attempt: number;
             version: number;
             /** Format: date-time */
@@ -308,17 +2040,35 @@ export interface components {
             /** Format: date-time */
             updatedAt: string;
         };
+        JobManifest: {
+            /** Format: uuid */
+            jobId: string;
+            /** @description Stored Kubernetes Job template with control-plane and resource-version fields omitted. */
+            manifest: {
+                [key: string]: unknown;
+            };
+        };
         JobList: {
             items: components["schemas"]["Job"][];
             count: number;
             queueVersion: number;
+        };
+        JobPage: {
+            items: components["schemas"]["Job"][];
+            /** @description Number of items in this page. */
+            count: number;
+            queueVersion: number;
+            /** @description Opaque continuation token, or null when this is the final page. */
+            nextCursor: string | null;
         };
         JobFacets: {
             total: number;
             observedStateCounts: {
                 [key: string]: number;
             };
+            /** @description At most the first 100 distinct non-empty namespaces in lexical order. The response does not indicate whether additional values were truncated. */
             namespaces: string[];
+            /** @description At most the first 100 distinct non-empty teams in lexical order. The response does not indicate whether additional values were truncated. */
             teams: string[];
         };
         CreateJob: {
@@ -345,11 +2095,21 @@ export interface components {
             /** Format: date-time */
             createdAt: string;
         };
+        JobEventPage: {
+            /** @description Events in descending ID order (newest first). */
+            items: components["schemas"]["JobEvent"][];
+            /** @description Opaque job-specific continuation token, or null when this is the final page. */
+            nextCursor: string | null;
+        };
         ErrorResponse: {
+            requestId: components["schemas"]["RequestId"];
             error: {
                 code: string;
                 message: string;
                 status: number;
+                details: {
+                    [key: string]: string;
+                };
             };
         };
     };
@@ -357,26 +2117,2000 @@ export interface components {
         /** @description Request failed */
         Error: {
             headers: {
+                "X-Request-ID": components["headers"]["RequestId"];
                 [name: string]: unknown;
             };
             content: {
                 "application/json": components["schemas"]["ErrorResponse"];
             };
         };
+        /** @description The resource is absent or not visible in the authorized scope. */
+        NotFound: {
+            headers: {
+                "X-Request-ID": components["headers"]["RequestId"];
+                [name: string]: unknown;
+            };
+            content: {
+                /**
+                 * @example {
+                 *       "requestId": "550e8400-e29b-41d4-a716-446655440000",
+                 *       "error": {
+                 *         "code": "RESOURCE_NOT_FOUND",
+                 *         "message": "Resource not found",
+                 *         "status": 404,
+                 *         "details": {}
+                 *       }
+                 *     }
+                 */
+                "application/json": components["schemas"]["ErrorResponse"];
+            };
+        };
+        /** @description The requested state conflicts with an existing resource or protected invariant. */
+        Conflict: {
+            headers: {
+                "X-Request-ID": components["headers"]["RequestId"];
+                [name: string]: unknown;
+            };
+            content: {
+                /**
+                 * @example {
+                 *       "requestId": "550e8400-e29b-41d4-a716-446655440000",
+                 *       "error": {
+                 *         "code": "RESOURCE_CONFLICT",
+                 *         "message": "Resource conflict",
+                 *         "status": 409,
+                 *         "details": {}
+                 *       }
+                 *     }
+                 */
+                "application/json": components["schemas"]["ErrorResponse"];
+            };
+        };
+        /** @description If-Match does not identify the current resource representation. */
+        PreconditionFailed: {
+            headers: {
+                "X-Request-ID": components["headers"]["RequestId"];
+                [name: string]: unknown;
+            };
+            content: {
+                /**
+                 * @example {
+                 *       "requestId": "550e8400-e29b-41d4-a716-446655440000",
+                 *       "error": {
+                 *         "code": "PRECONDITION_FAILED",
+                 *         "message": "Resource changed",
+                 *         "status": 412,
+                 *         "details": {}
+                 *       }
+                 *     }
+                 */
+                "application/json": components["schemas"]["ErrorResponse"];
+            };
+        };
     };
     parameters: {
+        /** @description Installation-internal credential accepted only from the trusted BFF. */
+        BFFKey: string;
+        Origin: string;
+        CSRFToken: string;
+        /** @description Stable resource ID after which the next page begins. */
+        Cursor: components["schemas"]["StableId"];
+        AccessLimit: number;
+        /** @description Stable credential UUID after which the next page begins. */
+        CredentialCursor: string;
+        /** @description Strong ETag returned by the latest GET. Wildcards and weak validators are rejected. */
+        IfMatch: string;
+        /** @description Optional caller-generated key scoped to Job creation by the authenticated principal. The API generates a non-replayable key when omitted. */
+        IdempotencyKey: string;
+        /** @description Opaque newest-first admission-decision continuation token. */
+        AdmissionCursor: string;
+        ProjectPathId: components["schemas"]["StableId"];
+        TeamId: components["schemas"]["StableId"];
+        PrincipalId: components["schemas"]["StableId"];
+        IdentityProviderId: string;
+        RoleDefinitionId: components["schemas"]["StableId"];
+        RoleBindingId: components["schemas"]["StableId"];
+        ServiceAccountId: components["schemas"]["StableId"];
+        CredentialId: string;
         JobId: string;
         Status: components["schemas"]["JobState"];
         Namespace: string;
         Team: string;
         Priority: number;
+        /** @description Restricts results to one authorized project. An inaccessible project returns an empty page. */
+        ProjectId: string;
+        /** @description Restricts results to one durable Kubernetes synchronization status. */
+        Synchronization: components["schemas"]["SynchronizationStatus"];
+        /** @description Includes jobs created at or after this RFC 3339 timestamp. */
+        CreatedAfter: string;
+        /** @description Includes jobs created before this RFC 3339 timestamp. */
+        CreatedBefore: string;
+        /** @description Includes jobs updated at or after this RFC 3339 timestamp. */
+        UpdatedAfter: string;
+        /** @description Includes jobs updated before this RFC 3339 timestamp. */
+        UpdatedBefore: string;
+        AuditEventId: components["schemas"]["AuditIdentifier"];
+        /** @description Customer-operated installation whose local audit record is queried. */
+        AuditInstallationId: components["schemas"]["AuditIdentifier"];
+        /** @description Restricts results to one authorized project. Inaccessible project scope returns no events. */
+        AuditProjectId: components["schemas"]["AuditIdentifier"];
+        AuditAction: string;
+        AuditDecision: components["schemas"]["AuditAuthorizationDecision"];
+        AuditResult: components["schemas"]["AuditResult"];
+        /** @description Includes events occurring at or after this RFC 3339 timestamp. */
+        AuditOccurredFrom: string;
+        /** @description Includes events occurring before this RFC 3339 timestamp. */
+        AuditOccurredTo: string;
+        AuditLimit: number;
+        /** @description Opaque continuation token preserving the stable occurredAt and id keyset. It is valid only with the same filters. */
+        AuditCursor: string;
     };
     requestBodies: never;
-    headers: never;
+    headers: {
+        /** @description Strong opaque concurrency token for the returned representation. */
+        ETag: string;
+        /** @description Bounded request correlation identifier accepted from X-Request-ID when valid, otherwise generated by the API. */
+        RequestId: components["schemas"]["RequestId"];
+    };
     pathItems: never;
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    listEnabledLoginMethods: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Enabled secret-free browser login methods */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginMethodList"];
+                };
+            };
+            429: components["responses"]["Error"];
+        };
+    };
+    createOAuthLoginAttempt: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-KubeQueue-BFF-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    returnTo?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description One-time OAuth state */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OAuthLoginAttempt"];
+                };
+            };
+            401: components["responses"]["Error"];
+        };
+    };
+    consumeOAuthLoginAttempt: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-KubeQueue-BFF-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    state: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Consumed OAuth verifier and nonce */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConsumedOAuthLoginAttempt"];
+                };
+            };
+            401: components["responses"]["Error"];
+        };
+    };
+    exchangeOIDCAuthorizationCode: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Installation-internal credential accepted only from the trusted BFF. */
+                "X-KubeQueue-BFF-Key": components["parameters"]["BFFKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExchangeOIDCAuthorizationCode"];
+            };
+        };
+        responses: {
+            /** @description Server-side OIDC tokens for immediate browser-session creation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OIDCTokenExchange"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    getOIDCAuthorizationMetadata: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Installation-internal credential accepted only from the trusted BFF. */
+                "X-KubeQueue-BFF-Key": components["parameters"]["BFFKey"];
+            };
+            path: {
+                identityProviderId: components["parameters"]["IdentityProviderId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Secret-free browser authorization metadata */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OIDCAuthorizationMetadata"];
+                };
+            };
+            401: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    createBrowserSession: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-KubeQueue-BFF-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateBrowserSession"];
+            };
+        };
+        responses: {
+            /** @description Rotated browser session */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatedBrowserSession"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+        };
+    };
+    createLocalBrowserSession: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Installation-internal credential accepted only from the trusted BFF. */
+                "X-KubeQueue-BFF-Key": components["parameters"]["BFFKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateLocalBrowserSession"];
+            };
+        };
+        responses: {
+            /** @description Rotated browser session */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatedBrowserSession"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            429: components["responses"]["Error"];
+        };
+    };
+    getBrowserSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current session metadata and session-bound CSRF value */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrowserSession"];
+                };
+            };
+            401: components["responses"]["Error"];
+        };
+    };
+    revokeBrowserSession: {
+        parameters: {
+            query?: never;
+            header: {
+                Origin: string;
+                "X-CSRF-Token": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Session revoked */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    refreshBrowserSession: {
+        parameters: {
+            query?: never;
+            header: {
+                Origin: string;
+                "X-CSRF-Token": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current session metadata after the bounded refresh attempt */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrowserSessionRefresh"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    changeCurrentLocalAccountPassword: {
+        parameters: {
+            query?: never;
+            header: {
+                Origin: components["parameters"]["Origin"];
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangeLocalPassword"];
+            };
+        };
+        responses: {
+            /** @description Rotated current browser session */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatedBrowserSession"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            429: components["responses"]["Error"];
+        };
+    };
+    resetLocalAccountPassword: {
+        parameters: {
+            query?: never;
+            header: {
+                Origin: components["parameters"]["Origin"];
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                principalId: components["parameters"]["PrincipalId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResetLocalPassword"];
+            };
+        };
+        responses: {
+            /** @description Password reset and target sessions revoked */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            429: components["responses"]["Error"];
+        };
+    };
+    getSetupStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Secret-free setup availability and observable readiness */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SetupStatus"];
+                };
+            };
+            429: components["responses"]["Error"];
+        };
+    };
+    claimSetup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetupClaimRequest"];
+            };
+        };
+        responses: {
+            /** @description Setup completed with a local installation owner */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SetupClaim"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            410: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+        };
+    };
+    getSetupRecovery: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Secret-free recovery checklist */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SetupRecovery"];
+                };
+            };
+            429: components["responses"]["Error"];
+        };
+    };
+    listIdentityProviders: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Secret-free identity-provider status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IdentityProviderList"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    createIdentityProvider: {
+        parameters: {
+            query?: never;
+            header: {
+                Origin: components["parameters"]["Origin"];
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateOIDCIdentityProvider"];
+            };
+        };
+        responses: {
+            /** @description Disabled secret-free identity-provider configuration */
+            201: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IdentityProvider"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+        };
+    };
+    getIdentityProvider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                identityProviderId: components["parameters"]["IdentityProviderId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Secret-free identity-provider status */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IdentityProvider"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    updateIdentityProvider: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Strong ETag returned by the latest GET. Wildcards and weak validators are rejected. */
+                "If-Match": components["parameters"]["IfMatch"];
+                Origin: components["parameters"]["Origin"];
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                identityProviderId: components["parameters"]["IdentityProviderId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfigureOIDCIdentityProvider"];
+            };
+        };
+        responses: {
+            /** @description Updated secret-free identity-provider configuration */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IdentityProvider"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            412: components["responses"]["PreconditionFailed"];
+            422: components["responses"]["Error"];
+        };
+    };
+    testIdentityProvider: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Strong ETag returned by the latest GET. Wildcards and weak validators are rejected. */
+                "If-Match": components["parameters"]["IfMatch"];
+                Origin: components["parameters"]["Origin"];
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                identityProviderId: components["parameters"]["IdentityProviderId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Updated provider with bounded test result */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IdentityProvider"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            412: components["responses"]["PreconditionFailed"];
+            422: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    enableIdentityProvider: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Strong ETag returned by the latest GET. Wildcards and weak validators are rejected. */
+                "If-Match": components["parameters"]["IfMatch"];
+                Origin: components["parameters"]["Origin"];
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                identityProviderId: components["parameters"]["IdentityProviderId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Enabled identity-provider status */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IdentityProvider"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            412: components["responses"]["PreconditionFailed"];
+        };
+    };
+    disableIdentityProvider: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Strong ETag returned by the latest GET. Wildcards and weak validators are rejected. */
+                "If-Match": components["parameters"]["IfMatch"];
+                Origin: components["parameters"]["Origin"];
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                identityProviderId: components["parameters"]["IdentityProviderId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Disabled identity-provider status */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IdentityProvider"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            412: components["responses"]["PreconditionFailed"];
+        };
+    };
+    getCurrentAccess: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current authenticated principal and bounded effective permission scopes */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CurrentAccess"];
+                };
+            };
+            401: components["responses"]["Error"];
+        };
+    };
+    listProjects: {
+        parameters: {
+            query?: {
+                /** @description Stable resource ID after which the next page begins. */
+                cursor?: components["parameters"]["Cursor"];
+                limit?: components["parameters"]["AccessLimit"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Bounded installation project page */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectPage"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    createProject: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateProject"];
+            };
+        };
+        responses: {
+            /** @description Project created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Project"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    getProject: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectPathId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Project */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Project"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listProjectNamespaceBindings: {
+        parameters: {
+            query?: {
+                /** @description Stable resource ID after which the next page begins. */
+                cursor?: components["parameters"]["Cursor"];
+                limit?: components["parameters"]["AccessLimit"];
+            };
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectPathId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Bounded namespace-binding page */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NamespaceBindingPage"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    createProjectNamespaceBinding: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectPathId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateNamespaceBinding"];
+            };
+        };
+        responses: {
+            /** @description Namespace binding created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NamespaceBinding"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    reassignProjectNamespaceBinding: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectPathId"];
+                namespace: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Namespace binding reassigned or already assigned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NamespaceBinding"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    removeProjectNamespaceBinding: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectPathId"];
+                namespace: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Namespace binding removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    reorderProjectQueue: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectPathId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReorderQueue"];
+            };
+        };
+        responses: {
+            /** @description New queue version */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueueVersion"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getInstallationAdmissionPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current versioned installation admission policy */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdmissionPolicy"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateInstallationAdmissionPolicy: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Strong ETag returned by the latest GET. Wildcards and weak validators are rejected. */
+                "If-Match": components["parameters"]["IfMatch"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateAdmissionPolicy"];
+            };
+        };
+        responses: {
+            /** @description Updated installation admission policy */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdmissionPolicy"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["NotFound"];
+            412: components["responses"]["PreconditionFailed"];
+        };
+    };
+    getProjectAdmissionSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectPathId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current project admission settings */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectAdmissionSettings"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateProjectAdmissionSettings: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Strong ETag returned by the latest GET. Wildcards and weak validators are rejected. */
+                "If-Match": components["parameters"]["IfMatch"];
+            };
+            path: {
+                projectId: components["parameters"]["ProjectPathId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateProjectAdmissionSettings"];
+            };
+        };
+        responses: {
+            /** @description Updated project admission settings */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectAdmissionSettings"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["NotFound"];
+            412: components["responses"]["PreconditionFailed"];
+        };
+    };
+    getProjectQuotaUsage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectPathId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current bounded project counters */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuotaCounters"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listProjectAdmissionDecisions: {
+        parameters: {
+            query?: {
+                /** @description Opaque newest-first admission-decision continuation token. */
+                cursor?: components["parameters"]["AdmissionCursor"];
+                limit?: components["parameters"]["AccessLimit"];
+            };
+            header?: never;
+            path: {
+                projectId: components["parameters"]["ProjectPathId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Bounded admission decision page */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdmissionDecisionPage"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listTeams: {
+        parameters: {
+            query?: {
+                /** @description Stable resource ID after which the next page begins. */
+                cursor?: components["parameters"]["Cursor"];
+                limit?: components["parameters"]["AccessLimit"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Bounded installation team page */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamPage"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    createTeam: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateTeam"];
+            };
+        };
+        responses: {
+            /** @description Team created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Team"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    getTeam: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                teamId: components["parameters"]["TeamId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Team */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Team"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listTeamMemberships: {
+        parameters: {
+            query?: {
+                /** @description Stable resource ID after which the next page begins. */
+                cursor?: components["parameters"]["Cursor"];
+                limit?: components["parameters"]["AccessLimit"];
+            };
+            header?: never;
+            path: {
+                teamId: components["parameters"]["TeamId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Bounded membership page */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamMembershipPage"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    createTeamMembership: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                teamId: components["parameters"]["TeamId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateTeamMembership"];
+            };
+        };
+        responses: {
+            /** @description Membership created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamMembership"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    getTeamMembership: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                teamId: components["parameters"]["TeamId"];
+                principalId: components["parameters"]["PrincipalId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Team membership */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamMembership"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    deleteTeamMembership: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                teamId: components["parameters"]["TeamId"];
+                principalId: components["parameters"]["PrincipalId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Membership removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    listEffectiveGrants: {
+        parameters: {
+            query: {
+                /** @description Stable resource ID after which the next page begins. */
+                cursor?: components["parameters"]["Cursor"];
+                limit?: components["parameters"]["AccessLimit"];
+                principalId: components["schemas"]["StableId"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Bounded effective-grant page */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EffectiveGrantPage"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listRoleDefinitions: {
+        parameters: {
+            query?: {
+                /** @description Stable resource ID after which the next page begins. */
+                cursor?: components["parameters"]["Cursor"];
+                limit?: components["parameters"]["AccessLimit"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Bounded role-definition page */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoleDefinitionPage"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    createRoleDefinition: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateRoleDefinition"];
+            };
+        };
+        responses: {
+            /** @description Custom role definition at revision 1 */
+            201: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoleDefinition"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    getRoleDefinition: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                roleDefinitionId: components["parameters"]["RoleDefinitionId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Role definition; custom-role ETag is its quoted revision */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoleDefinition"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateRoleDefinition: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Strong ETag returned by the latest GET. Wildcards and weak validators are rejected. */
+                "If-Match": components["parameters"]["IfMatch"];
+            };
+            path: {
+                roleDefinitionId: components["parameters"]["RoleDefinitionId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateRoleDefinition"];
+            };
+        };
+        responses: {
+            /** @description Next custom-role revision */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoleDefinition"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["PreconditionFailed"];
+        };
+    };
+    listRoleBindings: {
+        parameters: {
+            query?: {
+                /** @description Stable resource ID after which the next page begins. */
+                cursor?: components["parameters"]["Cursor"];
+                limit?: components["parameters"]["AccessLimit"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Bounded role-binding page */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoleBindingPage"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    createRoleBinding: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateRoleBinding"];
+            };
+        };
+        responses: {
+            /** @description Role binding created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoleBinding"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    getRoleBinding: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                roleBindingId: components["parameters"]["RoleBindingId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Role binding */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoleBinding"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    deleteRoleBinding: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                roleBindingId: components["parameters"]["RoleBindingId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Role binding deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    listServiceAccounts: {
+        parameters: {
+            query?: {
+                /** @description Stable resource ID after which the next page begins. */
+                cursor?: components["parameters"]["Cursor"];
+                limit?: components["parameters"]["AccessLimit"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Bounded service-account page without credentials */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServiceAccountPage"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    createServiceAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateServiceAccount"];
+            };
+        };
+        responses: {
+            /** @description Service account created without a credential */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServiceAccount"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    getServiceAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serviceAccountId: components["parameters"]["ServiceAccountId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Service account without credential material */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServiceAccount"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    bindServiceAccountOIDCIdentity: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serviceAccountId: components["parameters"]["ServiceAccountId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BindServiceAccountOIDCIdentity"];
+            };
+        };
+        responses: {
+            /** @description Service account with its OIDC identity binding */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServiceAccount"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    removeServiceAccountOIDCIdentity: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serviceAccountId: components["parameters"]["ServiceAccountId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OIDC identity binding removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listServiceAccountCredentials: {
+        parameters: {
+            query?: {
+                /** @description Stable credential UUID after which the next page begins. */
+                cursor?: components["parameters"]["CredentialCursor"];
+                limit?: components["parameters"]["AccessLimit"];
+            };
+            header?: never;
+            path: {
+                serviceAccountId: components["parameters"]["ServiceAccountId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Bounded non-secret credential metadata page */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServiceAccountCredentialPage"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    issueServiceAccountCredential: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serviceAccountId: components["parameters"]["ServiceAccountId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IssueServiceAccountCredential"];
+            };
+        };
+        responses: {
+            /** @description Credential metadata and plaintext token returned exactly once */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IssuedServiceAccountCredential"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    rotateServiceAccountCredential: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serviceAccountId: components["parameters"]["ServiceAccountId"];
+                credentialId: components["parameters"]["CredentialId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RotateServiceAccountCredential"];
+            };
+        };
+        responses: {
+            /** @description Replacement metadata and plaintext token returned exactly once */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RotatedServiceAccountCredential"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    getServiceAccountCredential: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serviceAccountId: components["parameters"]["ServiceAccountId"];
+                credentialId: components["parameters"]["CredentialId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Credential metadata without plaintext or digest */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServiceAccountCredential"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    revokeServiceAccountCredential: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serviceAccountId: components["parameters"]["ServiceAccountId"];
+                credentialId: components["parameters"]["CredentialId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Credential revoked or already revoked */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    searchAuditEvents: {
+        parameters: {
+            query: {
+                /** @description Customer-operated installation whose local audit record is queried. */
+                installationId: components["parameters"]["AuditInstallationId"];
+                /** @description Restricts results to one authorized project. Inaccessible project scope returns no events. */
+                projectId?: components["parameters"]["AuditProjectId"];
+                action?: components["parameters"]["AuditAction"];
+                decision?: components["parameters"]["AuditDecision"];
+                result?: components["parameters"]["AuditResult"];
+                /** @description Includes events occurring at or after this RFC 3339 timestamp. */
+                occurredFrom?: components["parameters"]["AuditOccurredFrom"];
+                /** @description Includes events occurring before this RFC 3339 timestamp. */
+                occurredTo?: components["parameters"]["AuditOccurredTo"];
+                limit?: components["parameters"]["AuditLimit"];
+                /** @description Opaque continuation token preserving the stable occurredAt and id keyset. It is valid only with the same filters. */
+                cursor?: components["parameters"]["AuditCursor"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized audit events in deterministic keyset order */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditEventPage"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
+    getAuditEvent: {
+        parameters: {
+            query: {
+                /** @description Customer-operated installation whose local audit record is queried. */
+                installationId: components["parameters"]["AuditInstallationId"];
+            };
+            header?: never;
+            path: {
+                auditEventId: components["parameters"]["AuditEventId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorized local audit event */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditEvent"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    exportAuditEvents: {
+        parameters: {
+            query: {
+                /** @description Customer-operated installation whose local audit record is queried. */
+                installationId: components["parameters"]["AuditInstallationId"];
+                /** @description Restricts results to one authorized project. Inaccessible project scope returns no events. */
+                projectId?: components["parameters"]["AuditProjectId"];
+                action?: components["parameters"]["AuditAction"];
+                decision?: components["parameters"]["AuditDecision"];
+                result?: components["parameters"]["AuditResult"];
+                /** @description Includes events occurring at or after this RFC 3339 timestamp. */
+                occurredFrom?: components["parameters"]["AuditOccurredFrom"];
+                /** @description Includes events occurring before this RFC 3339 timestamp. */
+                occurredTo?: components["parameters"]["AuditOccurredTo"];
+                limit?: components["parameters"]["AuditLimit"];
+                /** @description Opaque continuation token preserving the stable occurredAt and id keyset. It is valid only with the same filters. */
+                cursor?: components["parameters"]["AuditCursor"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Export page in stable occurredAt then id order */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditEventPage"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+        };
+    };
     getSystemStatus: {
         parameters: {
             query?: never;
@@ -399,6 +4133,29 @@ export interface operations {
             503: components["responses"]["Error"];
         };
     };
+    getSupportDiagnostics: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Sanitized local diagnostic snapshot */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupportDiagnostics"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
     listJobs: {
         parameters: {
             query?: {
@@ -406,7 +4163,25 @@ export interface operations {
                 namespace?: components["parameters"]["Namespace"];
                 team?: components["parameters"]["Team"];
                 priority?: components["parameters"]["Priority"];
+                /** @description Restricts results to one authorized project. An inaccessible project returns an empty page. */
+                projectId?: components["parameters"]["ProjectId"];
+                /** @description Restricts results to one durable Kubernetes synchronization status. */
+                synchronization?: components["parameters"]["Synchronization"];
+                /** @description Includes jobs created at or after this RFC 3339 timestamp. */
+                createdAfter?: components["parameters"]["CreatedAfter"];
+                /** @description Includes jobs created before this RFC 3339 timestamp. */
+                createdBefore?: components["parameters"]["CreatedBefore"];
+                /** @description Includes jobs updated at or after this RFC 3339 timestamp. */
+                updatedAfter?: components["parameters"]["UpdatedAfter"];
+                /** @description Includes jobs updated before this RFC 3339 timestamp. */
+                updatedBefore?: components["parameters"]["UpdatedBefore"];
+                /** @description Whitespace-normalized, case-insensitive job name search. */
                 search?: string;
+                /** @description Stable allowlisted ordering. Queue preserves the default queue ordering. */
+                sort?: "queue" | "createdAt" | "-createdAt" | "updatedAt" | "-updatedAt" | "name" | "-name";
+                limit?: number;
+                /** @description Opaque continuation token returned by the previous page. */
+                cursor?: string;
             };
             header?: never;
             path?: never;
@@ -414,13 +4189,13 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Matching jobs */
+            /** @description Matching jobs in deterministic keyset order */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["JobList"];
+                    "application/json": components["schemas"]["JobPage"];
                 };
             };
             400: components["responses"]["Error"];
@@ -430,7 +4205,10 @@ export interface operations {
     createJob: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Optional caller-generated key scoped to Job creation by the authenticated principal. The API generates a non-replayable key when omitted. */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
             path?: never;
             cookie?: never;
         };
@@ -451,6 +4229,7 @@ export interface operations {
             };
             400: components["responses"]["Error"];
             401: components["responses"]["Error"];
+            409: components["responses"]["Conflict"];
             422: components["responses"]["Error"];
         };
     };
@@ -463,7 +4242,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Global job inventory facets */
+            /** @description Authorized job inventory facets */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -524,7 +4303,7 @@ export interface operations {
             409: components["responses"]["Error"];
         };
     };
-    listJobEvents: {
+    getJobManifest: {
         parameters: {
             query?: never;
             header?: never;
@@ -535,17 +4314,45 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Immutable lifecycle history */
+            /** @description Stored Job manifest */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        items: components["schemas"]["JobEvent"][];
-                    };
+                    "application/json": components["schemas"]["JobManifest"];
                 };
             };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    listJobEvents: {
+        parameters: {
+            query?: {
+                limit?: number;
+                /** @description Opaque continuation token returned by the previous page. */
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                jobId: components["parameters"]["JobId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Newest-first immutable lifecycle history */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobEventPage"];
+                };
+            };
+            400: components["responses"]["Error"];
             401: components["responses"]["Error"];
             404: components["responses"]["Error"];
         };
@@ -620,10 +4427,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": {
-                    jobIds: string[];
-                    version: number;
-                };
+                "application/json": components["schemas"]["ReorderQueue"];
             };
         };
         responses: {
@@ -633,9 +4437,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        version: number;
-                    };
+                    "application/json": components["schemas"]["QueueVersion"];
                 };
             };
             400: components["responses"]["Error"];
@@ -667,13 +4469,20 @@ export interface operations {
     streamEvents: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Non-negative decimal cursor from the last processed SSE message. */
+                "Last-Event-ID"?: string;
+            };
             path?: never;
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description Server-sent job snapshots */
+            /**
+             * @description SSE stream of `jobs` events. Each `data` value is either
+             *     `{"type":"ready","cursor":0}` or
+             *     `{"type":"invalidate","jobIds":["<job UUID>"],"cursor":1}` with current values.
+             */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -682,6 +4491,7 @@ export interface operations {
                     "text/event-stream": string;
                 };
             };
+            400: components["responses"]["Error"];
             401: components["responses"]["Error"];
         };
     };

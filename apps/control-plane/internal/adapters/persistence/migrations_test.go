@@ -99,7 +99,7 @@ func TestVerifySchemaRejectsChangedDirtyAndIncompleteHistory(t *testing.T) {
 		},
 		{
 			name:   "incomplete",
-			mutate: `DELETE FROM schema_migrations WHERE version='migrations/007_reconciliation_error_details.sql'`,
+			mutate: `DELETE FROM schema_migrations WHERE version='migrations/010_browser_sessions.sql'`,
 			want:   "is not applied",
 		},
 	}

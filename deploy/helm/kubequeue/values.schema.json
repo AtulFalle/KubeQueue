@@ -55,19 +55,56 @@
     "config": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "globalConcurrency",
-        "namespaceConcurrency",
-        "adminToken",
-        "adminTokenExistingSecret",
-        "adminTokenExistingSecretKey"
-      ],
+      "required": ["globalConcurrency", "namespaceConcurrency"],
       "properties": {
         "globalConcurrency": { "type": "integer", "minimum": 1 },
-        "namespaceConcurrency": { "type": "integer", "minimum": 1 },
-        "adminToken": { "type": "string" },
-        "adminTokenExistingSecret": { "type": "string" },
-        "adminTokenExistingSecretKey": { "type": "string", "minLength": 1 }
+        "namespaceConcurrency": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["environment"],
+      "properties": {
+        "environment": {
+          "type": "string",
+          "enum": ["development", "test", "production"]
+        }
+      }
+    },
+    "development": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["localAdminSeed"],
+      "properties": {
+        "localAdminSeed": { "type": "boolean" }
+      }
+    },
+    "browser": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["publicURL", "origin"],
+      "properties": {
+        "publicURL": { "$ref": "#/$defs/httpOrigin" },
+        "origin": { "$ref": "#/$defs/httpOrigin" }
+      }
+    },
+    "security": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "existingSecret",
+        "sessionDigestKey",
+        "credentialEncryptionKey",
+        "bffInternalKey",
+        "serviceAccountDigestKey"
+      ],
+      "properties": {
+        "existingSecret": { "type": "string", "minLength": 1 },
+        "sessionDigestKey": { "type": "string", "minLength": 1 },
+        "credentialEncryptionKey": { "type": "string", "minLength": 1 },
+        "bffInternalKey": { "type": "string", "minLength": 1 },
+        "serviceAccountDigestKey": { "type": "string", "minLength": 1 }
       }
     },
     "database": {
@@ -99,6 +136,10 @@
     "imagePullSecrets",
     "watch",
     "config",
+    "runtime",
+    "development",
+    "browser",
+    "security",
     "database",
     "networkPolicy"
   ],
@@ -142,9 +183,34 @@
           }
         }
       }
+    },
+    {
+      "if": {
+        "properties": {
+          "development": {
+            "properties": {
+              "localAdminSeed": { "const": true }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "runtime": {
+            "properties": {
+              "environment": { "enum": ["development", "test"] }
+            }
+          }
+        }
+      }
     }
   ],
   "$defs": {
+    "httpOrigin": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(https://[^/?#]+|http://(localhost|127\\.0\\.0\\.1|\\[::1\\])(?::[0-9]+)?)$"
+    },
     "namespace": {
       "type": "string",
       "minLength": 1,

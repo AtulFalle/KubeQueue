@@ -4,7 +4,9 @@
 
 KubeQueue is split into three runtime processes built from two applications:
 
-- `web`: Next.js user interface. It consumes only the generated API client.
+- `web`: Next.js user interface and authenticated backend-for-frontend. Browser OAuth credentials
+  and revocable sessions remain server-side, and application data access consumes only the generated
+  API client.
 - `api`: Gin HTTP process. It validates commands and invokes application use cases.
 - `worker`: Go process. It schedules work and reconciles desired state with Kubernetes.
 
@@ -36,7 +38,9 @@ transport types. Interfaces are defined by the package that consumes them.
 
 ## Source-of-truth rules
 
-- PostgreSQL is the production control-plane store; SQLite is limited to single-process local use.
+- PostgreSQL is the production control-plane store for workload intent and history, installation
+  identity and policy, revocable sessions, coordination, and audit; SQLite is limited to
+  single-process local use.
 - Kubernetes is the source of truth for observed execution state.
 - Durable control-plane records are the source of truth for user intent and history.
 - Desired and observed state are stored separately and converged idempotently.
@@ -55,6 +59,12 @@ claims. Eligible rows are selected with row locks and `SKIP LOCKED`, and claims 
 failure only until their expiry. Queue ordering has its own monotonic version in
 `control_plane_metadata`; entity versions are not reused as a queue-wide concurrency token.
 SQLite uses the same schema and transactions but remains limited to one worker.
+
+For high availability, each reconciliation-leader acquisition receives a monotonic fencing
+generation. Durable mutation authority is conditional on the current generation, and leadership is
+revalidated immediately before Kubernetes writes. Followers keep warm informer caches but do not
+mutate Kubernetes. After failover, the new leader observes Kubernetes before retrying uncertain
+commands; KubeQueue does not claim exactly-once Kubernetes Job execution.
 
 Schema changes are ordered embedded migrations. PostgreSQL migration execution takes an advisory
 lock, and the Helm chart runs a dedicated migration hook before API and worker upgrades. Runtime
@@ -139,9 +149,32 @@ status. Its readiness probe remains false until database access, informer synchr
 required Job permissions are healthy. `GET /api/v1/system/status` exposes this bounded operational
 view so clients can distinguish an empty queue from unavailable or incomplete inventory.
 
-## Phase 1 trust boundary
+## Installation trust boundary
 
-The API is intended for cluster-internal or otherwise trusted networks and supports a single
-deployment-wide bearer token. Kubernetes access is limited to configured namespaces through the
-worker service account. Multi-user identity, team RBAC, quotas, logs, metrics insights, recurring
-schedules, Kueue, and preemption are deferred.
+Phase 1 assumed a cluster-internal or otherwise trusted network and one deployment-wide bearer
+token. Phase 3 supersedes that production boundary. The installation is now the top-level identity,
+policy, and audit boundary, with projects as delegated workload and administration boundaries.
+First-run setup atomically creates a local human installation owner with an operator-chosen
+username and password; `admin` is only the editable username default, and production has no default
+password. An `admin`/`admin` seed is allowed only in explicit development mode. OIDC is an additive
+login method configured later in Settings; SAML requires a customer-operated OIDC broker. The API
+authenticates and authorizes every operation against stable permissions and intersects application
+authority with project scope, namespace binding, workload management mode, and Helm-managed
+Kubernetes RBAC.
+
+The browser trusts the web BFF with a host-scoped session cookie but receives no local password
+after submission, OAuth token, refresh token, or deployment-wide administrator credential. Only
+the BFF may exchange local credentials or validated OIDC tokens for a browser session. The BFF is
+not an authorization boundary: the API checks every proxied request independently. Kubernetes
+credentials remain isolated to the worker and migration credentials to the migration process.
+
+Identity-provider reads and the public enabled-login-method list are secret-free. Provider
+configuration, testing, and enable/disable transitions use optimistic versions; client secrets are
+write-only, and transitions cannot remove the final enabled login method or final usable
+installation-owner login path.
+
+All product identity, policy, session, workload, and audit data remains in customer-operated
+PostgreSQL and referenced Kubernetes Secrets. KubeQueue has no hosted control-plane dependency and
+sends no telemetry or workload data outside the installation by default. Explicit OIDC, registry,
+secret, telemetry, audit-export, and backup integrations terminate at customer-controlled
+endpoints. The detailed security analysis is maintained in [`threat-model.md`](threat-model.md).

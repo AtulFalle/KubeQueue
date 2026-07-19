@@ -1,6 +1,12 @@
 'use client';
 
-import { KubeQueueClient, type Job, type JobAction, type JobEvent } from '@kubequeue/api-client';
+import {
+  KubeQueueClient,
+  type Job,
+  type JobAction,
+  type JobEvent,
+  type JobManifest,
+} from '@kubequeue/api-client';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
@@ -14,16 +20,22 @@ export function JobDetail({
   id,
   initialJob,
   initialEvents,
+  initialManifest,
   initialLoadFailed,
+  initialManifestLoadFailed,
 }: {
   id: string;
   initialJob?: Job;
   initialEvents: JobEvent[];
+  initialManifest?: JobManifest;
   initialLoadFailed: boolean;
+  initialManifestLoadFailed: boolean;
 }) {
   const router = useRouter();
   const [job, setJob] = useState<Job | undefined>(initialJob);
   const [events, setEvents] = useState<JobEvent[]>(initialEvents);
+  const [manifest, setManifest] = useState<JobManifest | undefined>(initialManifest);
+  const [manifestUnavailable, setManifestUnavailable] = useState(initialManifestLoadFailed);
   const [error, setError] = useState(initialLoadFailed ? 'Unable to load Job' : '');
 
   const refresh = useCallback(async () => {
@@ -37,11 +49,26 @@ export function JobDetail({
     }
   }, [id]);
 
+  const refreshManifest = useCallback(async () => {
+    try {
+      setManifest(await client.getJobManifest(id));
+      setManifestUnavailable(false);
+    } catch {
+      setManifestUnavailable(true);
+    }
+  }, [id]);
+
   useEffect(() => {
     if (!initialLoadFailed) return;
     const timeout = window.setTimeout(() => void refresh(), 0);
     return () => window.clearTimeout(timeout);
   }, [initialLoadFailed, refresh]);
+
+  useEffect(() => {
+    if (!initialManifestLoadFailed) return;
+    const timeout = window.setTimeout(() => void refreshManifest(), 0);
+    return () => window.clearTimeout(timeout);
+  }, [initialManifestLoadFailed, refreshManifest]);
 
   useEffect(() => {
     const events = new EventSource(client.eventsUrl());
@@ -139,9 +166,15 @@ export function JobDetail({
       </section>
       <section className="panel manifest">
         <h2>Stored Job template</h2>
-        <pre>
-          <code>{JSON.stringify(job.template, null, 2)}</code>
-        </pre>
+        {manifest ? (
+          <pre>
+            <code>{JSON.stringify(manifest.manifest, null, 2)}</code>
+          </pre>
+        ) : (
+          <p className="empty">
+            {manifestUnavailable ? 'Manifest access is unavailable.' : 'Loading manifest…'}
+          </p>
+        )}
       </section>
     </main>
   );

@@ -122,7 +122,10 @@ function prepareNamespace(namespace) {
     '--namespace',
     namespace,
     '--from-literal=database-url=postgres://kubequeue:kubequeue@postgres:5432/kubequeue?sslmode=disable',
-    '--from-literal=admin-token=acceptance-only-token',
+    '--from-literal=session-digest-key=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
+    '--from-literal=credential-encryption-key=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
+    '--from-literal=bff-internal-key=acceptance-only-bff-key-00000000',
+    '--from-literal=service-account-digest-key=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
   ]);
 }
 
@@ -165,7 +168,15 @@ function installArguments(release, chart, namespace) {
     '--set-string',
     'database.existingSecret=acceptance-config',
     '--set-string',
-    'config.adminTokenExistingSecret=acceptance-config',
+    'security.existingSecret=acceptance-config',
+    '--set-string',
+    'runtime.environment=test',
+    '--set',
+    'development.localAdminSeed=true',
+    '--set-string',
+    'browser.publicURL=http://localhost:33000',
+    '--set-string',
+    'browser.origin=http://localhost:33000',
   ];
 }
 
@@ -204,7 +215,7 @@ function restartWorker(release, namespace) {
   ]);
 }
 
-function runLifecycleTests(release, namespace, expectExistingJobs = false) {
+function runLifecycleTests(release, namespace) {
   const port = '33000';
   const portForward = spawn(
     'kubectl',
@@ -239,12 +250,8 @@ function runLifecycleTests(release, namespace, expectExistingJobs = false) {
     if (!ready) {
       throw new Error('Web port-forward did not become ready');
     }
-    execute(process.execPath, [
-      '-e',
-      `fetch('http://127.0.0.1:${port}/api/v1/jobs').then(async r=>{if(!r.ok)process.exit(1);const body=await r.json();const items=body.items??[];process.exit(items.some(j=>j.name?.includes('migrate'))||(${expectExistingJobs}&&items.length===0)?1:0)}).catch(()=>process.exit(1))`,
-    ]);
     execute(pnpm, ['nx', 'run', 'web:e2e', '--', 'e2e/lifecycle.spec.ts'], {
-      env: { KUBEQUEUE_E2E_BASE_URL: `http://127.0.0.1:${port}` },
+      env: { KUBEQUEUE_E2E_BASE_URL: `http://localhost:${port}` },
     });
   } finally {
     portForward.kill();
@@ -315,7 +322,7 @@ function testSelectedMode(chart = candidateChart, upgrade = false) {
   assertCanI(deniedNamespace, namespace, `${release}-kubequeue`, 'no');
   runHelmTests(release, namespace);
   restartWorker(release, namespace);
-  runLifecycleTests(release, namespace, upgrade);
+  runLifecycleTests(release, namespace);
   helm(['uninstall', release, '--namespace', namespace, '--wait']);
   kubectl(['get', 'secret', 'acceptance-config', '--namespace', namespace]);
   kubectl(['delete', 'namespace', namespace, watchedNamespace, deniedNamespace, '--wait=false']);

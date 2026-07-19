@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "build": "next build",
-    "dev": "next dev",
+    "dev": "next dev --webpack",
     "start": "next start",
     "test": "vitest run",
     "e2e": "playwright test",
@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@kubequeue/api-client": "workspace:*",
+    "jose": "^6.2.3",
     "next": "16.2.10",
     "react": "19.2.7",
     "react-dom": "19.2.7"

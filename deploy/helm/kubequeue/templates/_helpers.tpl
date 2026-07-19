@@ -28,3 +28,18 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- $namespaceHash := sha256sum .Release.Namespace | trunc 8 -}}
 {{- printf "%s-%s-worker" (include "kubequeue.fullname" .) $namespaceHash | trunc 63 | trimSuffix "-" -}}
 {{- end }}
+
+{{- define "kubequeue.securitySecretName" -}}
+{{- required "security.existingSecret is required" .Values.security.existingSecret -}}
+{{- end }}
+
+{{- define "kubequeue.securityReferenceChecksum" -}}
+{{- printf "%s:%s:%s:%s:%s:%s:%s"
+      .Values.security.existingSecret
+      .Values.security.sessionDigestKey
+      .Values.security.credentialEncryptionKey
+      .Values.security.bffInternalKey
+      .Values.security.bootstrapDigestKey
+      .Values.security.bootstrapTokenKey
+      .Values.security.serviceAccountDigestKey | sha256sum -}}
+{{- end }}

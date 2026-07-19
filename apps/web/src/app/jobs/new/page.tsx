@@ -1,15 +1,12 @@
-import { KubeQueueClient, type SystemStatus } from '@kubequeue/api-client';
+import { type SystemStatus } from '@kubequeue/api-client';
 
 import { JobForm } from '../../../components/job-form';
+import { serverAPIClient } from '../../../lib/server-api-client';
 
 export const dynamic = 'force-dynamic';
 
 export default async function NewJobPage() {
-  const origin = process.env.KUBEQUEUE_API_INTERNAL_URL ?? 'http://localhost:8080';
-  const client = new KubeQueueClient(
-    `${origin}/api/v1`,
-    process.env.KUBEQUEUE_ADMIN_TOKEN || undefined,
-  );
+  const client = await serverAPIClient();
   let systemStatus: SystemStatus | undefined;
   try {
     systemStatus = await client.getSystemStatus();

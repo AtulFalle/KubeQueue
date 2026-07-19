@@ -1,9 +1,13 @@
 package worker
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
+
+	"github.com/AtulFalle/KubeQueue/apps/control-plane/internal/leadership"
 )
 
 func TestHealthHandlerSeparatesLivenessAndReadiness(t *testing.T) {
@@ -34,4 +38,40 @@ func TestHealthHandlerSeparatesLivenessAndReadiness(t *testing.T) {
 	if available.Code != http.StatusNoContent {
 		t.Fatalf("ready status = %d", available.Code)
 	}
+}
+
+func TestWorkerLeadershipManagerAcquiresGenerationBearingAuthority(t *testing.T) {
+	store := &workerLeaseStore{}
+	manager, err := newLeadershipManager(store, "worker-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.TryAcquire(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	authority, err := manager.Authority(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if authority.Holder != "worker-a" || authority.Generation != 1 {
+		t.Fatalf("authority = %#v", authority)
+	}
+}
+
+type workerLeaseStore struct {
+	lease leadership.Lease
+}
+
+func (s *workerLeaseStore) AcquireLeadership(
+	_ context.Context, _ string, holder string, ttl time.Duration,
+) (leadership.Lease, error) {
+	next, err := leadership.Acquire(s.lease, holder, time.Now().UTC(), ttl)
+	if err == nil {
+		s.lease = next
+	}
+	return next, err
+}
+
+func (s *workerLeaseStore) LeadershipLease(context.Context, string) (leadership.Lease, error) {
+	return s.lease, nil
 }

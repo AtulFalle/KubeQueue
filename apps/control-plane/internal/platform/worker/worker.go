@@ -12,16 +12,21 @@ import (
 
 	"github.com/AtulFalle/KubeQueue/apps/control-plane/internal/adapters/kubernetes"
 	"github.com/AtulFalle/KubeQueue/apps/control-plane/internal/adapters/persistence"
+	"github.com/AtulFalle/KubeQueue/apps/control-plane/internal/leadership"
 	"github.com/AtulFalle/KubeQueue/apps/control-plane/internal/platform/config"
+	"github.com/AtulFalle/KubeQueue/apps/control-plane/internal/platform/runtimemetrics"
 	"github.com/AtulFalle/KubeQueue/apps/control-plane/internal/reconciler"
+	"github.com/google/uuid"
 )
 
 // Run continuously discovers, schedules, and reconciles Kubernetes Jobs.
 func Run(ctx context.Context) error {
 	store, err := persistence.OpenCompatible(ctx, os.Getenv("KUBEQUEUE_DATABASE_URL"))
 	if err != nil {
+		runtimemetrics.SetSchemaHealthy(false)
 		return fmt.Errorf("open worker store: %w", err)
 	}
+	runtimemetrics.SetSchemaHealthy(true)
 	defer func() { _ = store.Close() }()
 	if os.Getenv("KUBEQUEUE_DISABLE_KUBERNETES") == "true" {
 		<-ctx.Done()
@@ -35,8 +40,20 @@ func Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	workerReconciler := reconciler.New(store, client, namespaceScope)
+	leadershipManager, err := newLeadershipManager(store, uuid.NewString())
+	if err != nil {
+		return fmt.Errorf("configure reconciliation leadership: %w", err)
+	}
+	workerReconciler := reconciler.NewWithLeadership(
+		store, client, namespaceScope, leadershipManager,
+	)
 	return runWithHealthServer(ctx, workerReconciler)
+}
+
+func newLeadershipManager(
+	store leadership.LeaseStore, holder string,
+) (*leadership.Manager, error) {
+	return leadership.NewManager(store, "reconciler", holder, 6*time.Second)
 }
 
 type readiness interface {
@@ -82,6 +99,7 @@ func runWithHealthServer(ctx context.Context, worker readiness) error {
 
 func healthHandler(ready func() bool) http.Handler {
 	router := http.NewServeMux()
+	router.Handle("/metrics", runtimemetrics.Handler())
 	router.HandleFunc("/healthz", func(response http.ResponseWriter, _ *http.Request) {
 		response.WriteHeader(http.StatusNoContent)
 	})
