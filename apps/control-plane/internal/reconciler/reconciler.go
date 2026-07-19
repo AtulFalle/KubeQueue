@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	kube "github.com/AtulFalle/KubeQueue/apps/control-plane/internal/adapters/kubernetes"
@@ -20,44 +22,169 @@ import (
 type Reconciler struct {
 	repository        ports.Repository
 	kubernetes        *kube.Client
-	namespaces        []string
+	scope             domain.NamespaceScope
 	globalLimit       int
 	namespaceLimit    int
 	reconcileInterval time.Duration
 	leaseHolder       string
+	releaseVersion    string
+	ready             atomic.Bool
 }
 
-func New(repository ports.Repository, client *kube.Client) *Reconciler {
+func New(
+	repository ports.Repository, client *kube.Client, scope domain.NamespaceScope,
+) *Reconciler {
 	return &Reconciler{
-		repository: repository, kubernetes: client, namespaces: namespacesFromEnvironment(),
+		repository: repository, kubernetes: client, scope: scope,
 		globalLimit:       envInt("KUBEQUEUE_GLOBAL_CONCURRENCY", 10),
 		namespaceLimit:    envInt("KUBEQUEUE_NAMESPACE_CONCURRENCY", 5),
 		reconcileInterval: 2 * time.Second,
 		leaseHolder:       uuid.NewString(),
+		releaseVersion:    env("KUBEQUEUE_RELEASE_VERSION", "dev"),
 	}
 }
 
 func (r *Reconciler) Run(ctx context.Context) error {
-	changes, err := r.kubernetes.Start(ctx, r.namespaces)
+	changes, err := r.kubernetes.Start(ctx, r.discoveryNamespaces())
 	if err != nil {
 		return fmt.Errorf("start Kubernetes informers: %w", err)
 	}
 	recovery := time.NewTicker(30 * time.Second)
 	defer recovery.Stop()
+	heartbeat := time.NewTicker(5 * time.Second)
+	defer heartbeat.Stop()
+	if err := r.recordStatus(ctx, errors.New("informer synchronization is pending")); err != nil {
+		slog.Error("record initial worker status", "error", err)
+	}
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-changes:
-			if err := r.Reconcile(ctx); err != nil {
+			if err := r.reconcileAndRecord(ctx); err != nil {
 				slog.Error("reconciliation failed", "error", err)
 			}
 		case <-recovery.C:
-			if err := r.Reconcile(ctx); err != nil {
+			if err := r.reconcileAndRecord(ctx); err != nil {
 				slog.Error("recovery reconciliation failed", "error", err)
+			}
+		case <-heartbeat.C:
+			if err := r.recordHeartbeat(ctx); err != nil {
+				slog.Error("record worker heartbeat", "error", err)
 			}
 		}
 	}
+}
+
+func (r *Reconciler) Ready() bool {
+	return r.ready.Load()
+}
+
+func (r *Reconciler) reconcileAndRecord(ctx context.Context) error {
+	r.ready.Store(false)
+	reconcileErr := r.Reconcile(ctx)
+	statusErr := r.recordStatus(ctx, reconcileErr)
+	return errors.Join(reconcileErr, statusErr)
+}
+
+func (r *Reconciler) recordHeartbeat(ctx context.Context) error {
+	status, err := r.repository.WorkerStatus(ctx)
+	if err != nil {
+		return err
+	}
+	now := time.Now().UTC()
+	status.HeartbeatAt = &now
+	return r.repository.UpdateWorkerStatus(ctx, status)
+}
+
+func (r *Reconciler) recordStatus(ctx context.Context, reconcileErr error) error {
+	namespaceStatuses, effectiveNamespaces, authorityErr := r.authorityStatuses(ctx)
+	statusErr := errors.Join(reconcileErr, authorityErr)
+	now := time.Now().UTC()
+	status := domain.WorkerStatus{
+		State:                domain.WorkerStateReady,
+		HeartbeatAt:          &now,
+		WatchMode:            r.scope.Mode(),
+		EffectiveNamespaces:  effectiveNamespaces,
+		ExcludedNamespaces:   r.scope.ExcludedNamespaces(),
+		Namespaces:           namespaceStatuses,
+		GlobalConcurrency:    r.globalLimit,
+		NamespaceConcurrency: r.namespaceLimit,
+		ReleaseVersion:       r.releaseVersion,
+	}
+	if statusErr == nil {
+		status.LastSuccessfulReconciliationAt = &now
+		r.ready.Store(true)
+	} else {
+		status.State = domain.WorkerStateDegraded
+		status.ActiveError = statusErr.Error()
+		r.ready.Store(false)
+	}
+	return r.repository.UpdateWorkerStatus(ctx, status)
+}
+
+func (r *Reconciler) authorityStatuses(
+	ctx context.Context,
+) ([]domain.NamespaceAuthorityStatus, []string, error) {
+	namespaces := r.scope.Namespaces()
+	clusterAuthorized := false
+	clusterMessage := ""
+	var authorityErrors []error
+	if r.scope.Mode() == domain.WatchModeAll {
+		discovered, err := r.kubernetes.ListNamespaces(ctx)
+		if err != nil {
+			authorityErrors = append(authorityErrors, fmt.Errorf("list namespaces: %w", err))
+		} else {
+			namespaces = namespaces[:0]
+			for _, namespace := range discovered {
+				if r.scope.Allows(namespace) {
+					namespaces = append(namespaces, namespace)
+				}
+			}
+			sort.Strings(namespaces)
+		}
+		var accessErr error
+		clusterAuthorized, clusterMessage, accessErr = r.kubernetes.CheckJobAccess(ctx, "")
+		if accessErr != nil {
+			authorityErrors = append(authorityErrors, accessErr)
+		} else if !clusterAuthorized {
+			authorityErrors = append(authorityErrors, errors.New(clusterMessage))
+		}
+	}
+
+	statuses := make([]domain.NamespaceAuthorityStatus, 0, len(namespaces))
+	now := time.Now().UTC()
+	for _, namespace := range namespaces {
+		authorized, message := clusterAuthorized, clusterMessage
+		var err error
+		if r.scope.Mode() == domain.WatchModeSelected {
+			authorized, message, err = r.kubernetes.CheckJobAccess(ctx, namespace)
+			if err != nil {
+				authorityErrors = append(
+					authorityErrors, fmt.Errorf("check namespace %s: %w", namespace, err),
+				)
+			} else if !authorized {
+				authorityErrors = append(
+					authorityErrors, fmt.Errorf("namespace %s: %s", namespace, message),
+				)
+			}
+		}
+		informerNamespace := namespace
+		if r.scope.Mode() == domain.WatchModeAll {
+			informerNamespace = ""
+		}
+		synced := r.kubernetes.InformerSynced(informerNamespace)
+		if !synced {
+			authorityErrors = append(
+				authorityErrors, fmt.Errorf("namespace %s informer is not synchronized", namespace),
+			)
+		}
+		statuses = append(statuses, domain.NamespaceAuthorityStatus{
+			Namespace: namespace, InformerSynced: synced, Authorized: authorized,
+			Message: message, ObservedAt: &now,
+		})
+	}
+	return statuses, namespaces, errors.Join(authorityErrors...)
 }
 
 func (r *Reconciler) Reconcile(ctx context.Context) error {
@@ -71,7 +198,10 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 		return nil
 	}
 	var reconcileErrors []error
-	for _, namespace := range r.namespaces {
+	if err := r.markOutOfScope(ctx); err != nil {
+		reconcileErrors = append(reconcileErrors, fmt.Errorf("mark out-of-scope jobs: %w", err))
+	}
+	for _, namespace := range r.discoveryNamespaces() {
 		if err := r.discover(ctx, namespace); err != nil {
 			reconcileErrors = append(
 				reconcileErrors, fmt.Errorf("discover namespace %s: %w", namespace, err),
@@ -99,6 +229,13 @@ func (r *Reconciler) discover(ctx context.Context, namespace string) error {
 	seenUIDs := make(map[string]struct{}, len(jobs))
 	var discoveryErrors []error
 	for _, observed := range jobs {
+		observedNamespace := observed.Namespace
+		if observedNamespace == "" {
+			observedNamespace = namespace
+		}
+		if !r.scope.Allows(observedNamespace) {
+			continue
+		}
 		uid := string(observed.UID)
 		seenUIDs[uid] = struct{}{}
 		if kube.IsIgnored(observed) {
@@ -109,10 +246,9 @@ func (r *Reconciler) discover(ctx context.Context, namespace string) error {
 		observedAt := time.Now().UTC()
 		id := kube.JobID(observed)
 		if id == "" {
-			desired := state
 			_, err := r.repository.Adopt(ctx, domain.Job{
-				Name: observed.Name, Namespace: namespace, Team: observed.Labels["team"],
-				DesiredState: desired, ObservedState: state, KubernetesUID: uid,
+				Name: observed.Name, Namespace: observedNamespace, Team: observed.Labels["team"],
+				DesiredState: state, ObservedState: state, KubernetesUID: uid,
 				ManagementMode: mode, SyncStatus: domain.SyncStatusSynced,
 				ResourceVersion: observed.ResourceVersion, LastSeenAt: &observedAt,
 				ObservedAt: &observedAt, ObservedReason: reason, ObservedMessage: message,
@@ -120,7 +256,8 @@ func (r *Reconciler) discover(ctx context.Context, namespace string) error {
 			})
 			if err != nil {
 				discoveryErrors = append(
-					discoveryErrors, fmt.Errorf("adopt Job %s/%s: %w", namespace, observed.Name, err),
+					discoveryErrors,
+					fmt.Errorf("adopt Job %s/%s: %w", observedNamespace, observed.Name, err),
 				)
 			}
 			continue
@@ -128,7 +265,7 @@ func (r *Reconciler) discover(ctx context.Context, namespace string) error {
 		current, err := r.repository.Get(ctx, id)
 		if errors.Is(err, ports.ErrNotFound) {
 			_, err = r.repository.Adopt(ctx, domain.Job{
-				Name: observed.Name, Namespace: namespace,
+				Name: observed.Name, Namespace: observedNamespace,
 				Team: observed.Labels["team"], DesiredState: state, ObservedState: state,
 				KubernetesUID: uid, ManagementMode: domain.ManagementConflicted,
 				SyncStatus: domain.SyncStatusConflicted, ResourceVersion: observed.ResourceVersion,
@@ -138,7 +275,7 @@ func (r *Reconciler) discover(ctx context.Context, namespace string) error {
 				Template:        kube.Template(observed), Attempt: 1,
 			})
 		} else if err == nil {
-			if current.Namespace != namespace || current.Name != observed.Name ||
+			if current.Namespace != observedNamespace || current.Name != observed.Name ||
 				(current.KubernetesUID != "" && current.KubernetesUID != uid) {
 				_, err = r.repository.SetObserved(ctx, id, domain.Observation{
 					State: current.ObservedState, ResourceVersion: observed.ResourceVersion,
@@ -160,7 +297,7 @@ func (r *Reconciler) discover(ctx context.Context, namespace string) error {
 			}
 		}
 		if err != nil {
-			jobErr := fmt.Errorf("observe Job %s/%s: %w", namespace, observed.Name, err)
+			jobErr := fmt.Errorf("observe Job %s/%s: %w", observedNamespace, observed.Name, err)
 			if current.ID != "" {
 				jobErr = r.recordJobError(ctx, current, jobErr)
 			}
@@ -172,7 +309,7 @@ func (r *Reconciler) discover(ctx context.Context, namespace string) error {
 		return errors.Join(append(discoveryErrors, err)...)
 	}
 	for _, stored := range storedJobs {
-		if stored.KubernetesUID == "" || stored.Terminal() {
+		if !r.scope.Allows(stored.Namespace) || stored.KubernetesUID == "" || stored.Terminal() {
 			continue
 		}
 		if _, exists := seenUIDs[stored.KubernetesUID]; exists {
@@ -188,6 +325,33 @@ func (r *Reconciler) discover(ctx context.Context, namespace string) error {
 		}
 	}
 	return errors.Join(discoveryErrors...)
+}
+
+func (r *Reconciler) markOutOfScope(ctx context.Context) error {
+	jobs, err := r.repository.List(ctx, ports.JobFilter{})
+	if err != nil {
+		return err
+	}
+	var scopeErrors []error
+	for _, job := range jobs {
+		if r.scope.Allows(job.Namespace) || job.SyncStatus == domain.SyncStatusOutOfScope ||
+			job.ArchivedAt != nil {
+			continue
+		}
+		if _, err := r.repository.MarkOutOfScope(
+			ctx, job.ID, job.ResourceVersion, time.Now().UTC(),
+		); err != nil {
+			scopeErrors = append(scopeErrors, fmt.Errorf("mark Job %s out of scope: %w", job.ID, err))
+		}
+	}
+	return errors.Join(scopeErrors...)
+}
+
+func (r *Reconciler) discoveryNamespaces() []string {
+	if r.scope.Mode() == domain.WatchModeAll {
+		return []string{""}
+	}
+	return r.scope.Namespaces()
 }
 
 func (r *Reconciler) applyCommands(ctx context.Context, jobs []domain.Job) error {
@@ -362,8 +526,10 @@ func (r *Reconciler) recordJobError(ctx context.Context, job domain.Job, reconci
 	if delay > time.Minute {
 		delay = time.Minute
 	}
+	code, remediation := kube.ClassifyError(reconcileErr)
 	if err := r.repository.RecordReconcileError(
-		ctx, job.ID, job.ResourceVersion, reconcileErr.Error(), time.Now().UTC().Add(delay),
+		ctx, job.ID, job.ResourceVersion, code, reconcileErr.Error(), remediation,
+		time.Now().UTC().Add(delay),
 	); err != nil {
 		return errors.Join(reconcileErr, fmt.Errorf("record reconciliation error: %w", err))
 	}
@@ -396,18 +562,6 @@ func templateName(job domain.Job) string {
 	}
 	_ = json.Unmarshal(job.Template, &template)
 	return template.Metadata.Name
-}
-
-func namespacesFromEnvironment() []string {
-	value := strings.TrimSpace(env("KUBEQUEUE_WATCH_NAMESPACES", "default"))
-	parts := strings.Split(value, ",")
-	namespaces := make([]string, 0, len(parts))
-	for _, part := range parts {
-		if namespace := strings.TrimSpace(part); namespace != "" {
-			namespaces = append(namespaces, namespace)
-		}
-	}
-	return namespaces
 }
 
 func envInt(name string, fallback int) int {

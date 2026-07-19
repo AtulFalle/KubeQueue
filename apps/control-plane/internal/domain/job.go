@@ -58,13 +58,15 @@ type Job struct {
 	Position         int64           `json:"position"`
 	DesiredState     State           `json:"desiredState"`
 	ObservedState    State           `json:"observedState"`
-	ManagementMode   ManagementMode  `json:"-"`
-	SyncStatus       SyncStatus      `json:"-"`
-	ActionPending    bool            `json:"-"`
-	ObservedReason   string          `json:"-"`
-	ObservedMessage  string          `json:"-"`
-	ObservedAt       *time.Time      `json:"-"`
-	LastError        string          `json:"-"`
+	ManagementMode   ManagementMode  `json:"managementMode"`
+	SyncStatus       SyncStatus      `json:"syncStatus"`
+	ActionPending    bool            `json:"actionPending"`
+	ObservedReason   string          `json:"observedReason,omitempty"`
+	ObservedMessage  string          `json:"observedMessage,omitempty"`
+	ObservedAt       *time.Time      `json:"observedAt,omitempty"`
+	LastError        string          `json:"lastError,omitempty"`
+	LastErrorCode    string          `json:"lastErrorCode,omitempty"`
+	ErrorRemediation string          `json:"errorRemediation,omitempty"`
 	ScheduledFor     *time.Time      `json:"scheduledFor,omitempty"`
 	KubernetesUID    string          `json:"kubernetesUid,omitempty"`
 	Template         json.RawMessage `json:"template"`
@@ -101,6 +103,13 @@ type Event struct {
 	CreatedAt time.Time       `json:"createdAt"`
 }
 
+type JobFacets struct {
+	Total               int            `json:"total"`
+	ObservedStateCounts map[string]int `json:"observedStateCounts"`
+	Namespaces          []string       `json:"namespaces"`
+	Teams               []string       `json:"teams"`
+}
+
 type CreateJob struct {
 	Name         string
 	Namespace    string
@@ -129,7 +138,11 @@ func (c CreateJob) Validate() error {
 	var template struct {
 		APIVersion string `json:"apiVersion"`
 		Kind       string `json:"kind"`
-		Spec       struct {
+		Metadata   struct {
+			Annotations map[string]string `json:"annotations"`
+			Labels      map[string]string `json:"labels"`
+		} `json:"metadata"`
+		Spec struct {
 			Template struct {
 				Spec struct {
 					RestartPolicy string            `json:"restartPolicy"`
@@ -146,6 +159,21 @@ func (c CreateJob) Validate() error {
 	}
 	if template.Kind != "" && template.Kind != "Job" {
 		return errors.New("template kind must be Job")
+	}
+	if strings.EqualFold(strings.TrimSpace(
+		template.Metadata.Annotations["kubequeue.io/ignore"],
+	), "true") ||
+		strings.TrimSpace(template.Metadata.Annotations["helm.sh/hook"]) != "" ||
+		strings.EqualFold(strings.TrimSpace(
+			template.Metadata.Labels["kubequeue.io/internal"],
+		), "true") {
+		return errors.New("template is excluded from KubeQueue management")
+	}
+	if _, exists := template.Metadata.Labels["kubequeue.io/job-id"]; exists {
+		return errors.New("template must not set KubeQueue ownership labels")
+	}
+	if _, exists := template.Metadata.Labels["kubequeue.io/managed"]; exists {
+		return errors.New("template must not set KubeQueue ownership labels")
 	}
 	if len(template.Spec.Template.Spec.Containers) == 0 {
 		return errors.New("template must include at least one container")

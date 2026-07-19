@@ -1,9 +1,19 @@
 'use client';
 
-import { KubeQueueClient, type Job, type JobAction, type JobState } from '@kubequeue/api-client';
+import {
+  KubeQueueClient,
+  type Job,
+  type JobAction,
+  type JobFacets,
+  type JobFilters,
+  type JobState,
+  type SystemStatus,
+} from '@kubequeue/api-client';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+
+import { LifecycleActions, pendingLifecycleLabel } from './lifecycle-actions';
 
 const client = new KubeQueueClient();
 const states: Array<JobState | 'ALL'> = [
@@ -16,136 +26,112 @@ const states: Array<JobState | 'ALL'> = [
   'CANCELLED',
 ];
 
-export function Dashboard({
-  initialJobs,
-  initialQueueVersion,
-  initialLoadFailed = false,
-}: {
+type InventoryFilters = {
+  status: JobState | 'ALL';
+  search: string;
+  namespace: string;
+  team: string;
+  priority: string;
+};
+
+type DashboardProps = {
   initialJobs: Job[];
   initialQueueVersion: number;
+  initialFacets: JobFacets;
+  initialSystemStatus?: SystemStatus;
   initialLoadFailed?: boolean;
-}) {
+};
+
+export function Dashboard({
+  initialJobs,
+  initialFacets,
+  initialSystemStatus,
+  initialLoadFailed = false,
+}: DashboardProps) {
   const router = useRouter();
   const pathname = usePathname();
   const query = useSearchParams();
-  const status = (query.get('status') as JobState | null) ?? 'ALL';
-  const search = query.get('search') ?? '';
-  const namespace = query.get('namespace') ?? '';
-  const team = query.get('team') ?? '';
-  const priority = query.get('priority') ?? '';
-  const [jobs, setJobs] = useState<Job[]>(initialJobs);
-  const [queueVersion, setQueueVersion] = useState(initialQueueVersion);
+  const [filters, setFilters] = useState<InventoryFilters>(() => {
+    const requestedStatus = query.get('status');
+    return {
+      status:
+        requestedStatus && states.includes(requestedStatus as JobState)
+          ? (requestedStatus as JobState)
+          : 'ALL',
+      search: query.get('search') ?? '',
+      namespace: query.get('namespace') ?? '',
+      team: query.get('team') ?? '',
+      priority: query.get('priority') ?? '',
+    };
+  });
+  const [jobs, setJobs] = useState(initialJobs);
+  const [facets, setFacets] = useState(initialFacets);
+  const [systemStatus, setSystemStatus] = useState(initialSystemStatus);
   const [loading, setLoading] = useState(initialLoadFailed);
-  const [error, setError] = useState(initialLoadFailed ? 'Unable to load jobs' : '');
-  const [dragged, setDragged] = useState<string>();
+  const [error, setError] = useState(initialLoadFailed ? 'Unable to load job inventory' : '');
+  const requestSequence = useRef(0);
 
-  function setFilter(name: string, value: string) {
-    const next = new URLSearchParams(query);
-    if (value && value !== 'ALL') next.set(name, value);
-    else next.delete(name);
-    const suffix = next.toString();
-    router.replace(suffix ? `${pathname}?${suffix}` : pathname, { scroll: false });
-  }
-
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (nextFilters: InventoryFilters, showLoading = false) => {
+    const request = ++requestSequence.current;
+    if (showLoading) setLoading(true);
     try {
-      const response = await client.listJobs({
-        ...(status === 'ALL' ? {} : { status }),
-        search,
-        namespace,
-        team,
-        ...(priority === '' ? {} : { priority: Number(priority) }),
-      });
+      const [response, nextFacets, nextStatus] = await Promise.all([
+        client.listJobs(toApiFilters(nextFilters)),
+        client.getJobFacets(),
+        client.getSystemStatus(),
+      ]);
+      if (request !== requestSequence.current) return;
       setJobs(response.items);
-      setQueueVersion(response.queueVersion);
+      setFacets(nextFacets);
+      setSystemStatus(nextStatus);
       setError('');
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Unable to load jobs');
+      if (request !== requestSequence.current) return;
+      setError(reason instanceof Error ? reason.message : 'Unable to load job inventory');
     } finally {
-      setLoading(false);
+      if (request === requestSequence.current) setLoading(false);
     }
-  }, [namespace, priority, search, status, team]);
+  }, []);
 
   useEffect(() => {
-    const timeout = window.setTimeout(() => void refresh(), 0);
+    const timeout = window.setTimeout(() => void refresh(filters, true), 300);
     return () => window.clearTimeout(timeout);
-  }, [refresh]);
+  }, [filters, refresh]);
 
   useEffect(() => {
     const events = new EventSource(client.eventsUrl());
-    events.addEventListener('jobs', () => void refresh());
+    events.addEventListener('jobs', () => void refresh(filters));
     return () => events.close();
-  }, [refresh]);
+  }, [filters, refresh]);
 
-  const counts = useMemo(
-    () =>
-      jobs.reduce<Record<string, number>>((result, job) => {
-        result[job.observedState] = (result[job.observedState] ?? 0) + 1;
-        return result;
-      }, {}),
-    [jobs],
-  );
-  const queued = jobs.filter((job) => job.desiredState === 'QUEUED');
-  const queueIndexes = new Map(queued.map((job, index) => [job.id, index]));
-  const active = jobs.filter((job) => job.observedState === 'RUNNING');
+  function setFilter(name: keyof InventoryFilters, value: string) {
+    const next = { ...filters, [name]: value } as InventoryFilters;
+    setFilters(next);
+    const params = new URLSearchParams();
+    if (next.status !== 'ALL') params.set('status', next.status);
+    if (next.search) params.set('search', next.search);
+    if (next.namespace) params.set('namespace', next.namespace);
+    if (next.team) params.set('team', next.team);
+    if (next.priority) params.set('priority', next.priority);
+    const suffix = params.toString();
+    router.replace(suffix ? `${pathname}?${suffix}` : pathname, { scroll: false });
+  }
 
-  async function command(job: Job, action: JobAction) {
-    if (
-      ['pause', 'terminate', 'retry'].includes(action) &&
-      !window.confirm(`${action[0]?.toUpperCase()}${action.slice(1)} ${job.name}?`)
-    ) {
+  function applyCommand(updated: Job, action: JobAction) {
+    if (action === 'retry' && !jobs.some((job) => job.id === updated.id)) {
+      router.push(`/jobs/${updated.id}`);
       return;
     }
-    try {
-      const updated = await client.command(job.id, action);
-      if (action === 'retry' && updated.id !== job.id) {
-        router.push(`/jobs/${updated.id}`);
-        return;
-      }
-      await refresh();
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Action failed');
-    }
+    setJobs((current) => current.map((job) => (job.id === updated.id ? updated : job)));
   }
 
-  async function move(jobID: string, direction: -1 | 1) {
-    const ids = queued.map((job) => job.id);
-    const from = ids.indexOf(jobID);
-    const to = from + direction;
-    if (from < 0 || to < 0 || to >= ids.length) return;
-    const current = ids[from];
-    const replacement = ids[to];
-    if (current === undefined || replacement === undefined) return;
-    ids[from] = replacement;
-    ids[to] = current;
-    const previous = jobs;
-    setJobs(applyOptimisticOrder(jobs, ids));
-    try {
-      await client.reorder(ids, queueVersion);
-      await refresh();
-    } catch (reason) {
-      setJobs(previous);
-      setError(reason instanceof Error ? reason.message : 'Queue changed; refresh and try again');
-      await refresh();
-    }
-  }
-
-  async function drop(beforeID: string) {
-    if (!dragged || dragged === beforeID) return;
-    const ids = queued.map((job) => job.id).filter((id) => id !== dragged);
-    ids.splice(ids.indexOf(beforeID), 0, dragged);
-    setDragged(undefined);
-    const previous = jobs;
-    setJobs(applyOptimisticOrder(jobs, ids));
-    try {
-      await client.reorder(ids, queueVersion);
-      await refresh();
-    } catch (reason) {
-      setJobs(previous);
-      setError(reason instanceof Error ? reason.message : 'Could not reorder queue');
-      await refresh();
-    }
-  }
+  const isFiltered = Object.entries(filters).some(
+    ([name, value]) => value !== '' && !(name === 'status' && value === 'ALL'),
+  );
+  const selectedNamespace = systemStatus?.watch.namespaces.find(
+    (item) => item.namespace === filters.namespace,
+  );
+  const workerState = systemStatus?.worker.state ?? 'unavailable';
 
   return (
     <main className="page-shell">
@@ -157,25 +143,29 @@ export function Dashboard({
             See Kubernetes work in one place, shape the queue, and act without a workflow engine.
           </p>
         </div>
-        <a className="button primary" href="/jobs/new">
+        <Link className="button primary" href="/jobs/new">
           Submit job
-        </a>
+        </Link>
       </section>
 
-      <section className="metrics" aria-label="Job summary">
-        <Metric label="In queue" value={queued.length} tone="violet" />
-        <Metric label="Running now" value={active.length} tone="cyan" />
-        <Metric label="Succeeded" value={counts.COMPLETED ?? 0} tone="green" />
-        <Metric label="Needs attention" value={counts.FAILED ?? 0} tone="red" />
+      <section className="metrics" aria-label="Global job summary">
+        <Metric label="All jobs" value={facets.total} tone="violet" />
+        <Metric label="Running now" value={facets.observedStateCounts.RUNNING ?? 0} tone="cyan" />
+        <Metric label="Succeeded" value={facets.observedStateCounts.COMPLETED ?? 0} tone="green" />
+        <Metric label="Needs attention" value={facets.observedStateCounts.FAILED ?? 0} tone="red" />
       </section>
 
       <section className="panel">
         <div className="panel-heading">
           <div>
-            <p className="eyebrow">Live inventory</p>
+            <p className="eyebrow">Inventory</p>
             <h2>Jobs</h2>
           </div>
-          <button className="button ghost" type="button" onClick={() => void refresh()}>
+          <button
+            className="button ghost"
+            type="button"
+            onClick={() => void refresh(filters, true)}
+          >
             Refresh
           </button>
         </div>
@@ -184,14 +174,17 @@ export function Dashboard({
           <label>
             <span>Search</span>
             <input
-              value={search}
+              value={filters.search}
               onChange={(event) => setFilter('search', event.target.value)}
               placeholder="Job name"
             />
           </label>
           <label>
             <span>Status</span>
-            <select value={status} onChange={(event) => setFilter('status', event.target.value)}>
+            <select
+              value={filters.status}
+              onChange={(event) => setFilter('status', event.target.value)}
+            >
               {states.map((state) => (
                 <option key={state}>{state}</option>
               ))}
@@ -199,24 +192,32 @@ export function Dashboard({
           </label>
           <label>
             <span>Namespace</span>
-            <input
-              value={namespace}
+            <select
+              value={filters.namespace}
               onChange={(event) => setFilter('namespace', event.target.value)}
-              placeholder="All"
-            />
+            >
+              <option value="">All namespaces</option>
+              {facets.namespaces.map((namespace) => (
+                <option key={namespace}>{namespace}</option>
+              ))}
+            </select>
           </label>
           <label>
             <span>Team</span>
-            <input
-              value={team}
+            <select
+              value={filters.team}
               onChange={(event) => setFilter('team', event.target.value)}
-              placeholder="All"
-            />
+            >
+              <option value="">All teams</option>
+              {facets.teams.map((team) => (
+                <option key={team}>{team}</option>
+              ))}
+            </select>
           </label>
           <label>
             <span>Priority</span>
             <input
-              value={priority}
+              value={filters.priority}
               onChange={(event) => setFilter('priority', event.target.value)}
               type="number"
               min="-1000"
@@ -226,172 +227,81 @@ export function Dashboard({
           </label>
         </div>
 
+        {workerState === 'degraded' ? (
+          <div className="notice" role="status">
+            Inventory is incomplete while the worker is degraded.
+          </div>
+        ) : null}
+        {selectedNamespace &&
+        (!selectedNamespace.authorized || !selectedNamespace.informerSynced) ? (
+          <div className="notice" role="status">
+            {selectedNamespace.authorized
+              ? `${selectedNamespace.namespace} is still synchronizing.`
+              : `${selectedNamespace.namespace} is not authorized for management.`}
+          </div>
+        ) : null}
         {error ? (
           <div className="alert" role="alert">
             {error}
           </div>
         ) : null}
         {loading ? <p className="empty">Loading cluster state…</p> : null}
-        {!loading && jobs.length === 0 ? (
+        {!loading && workerState === 'unavailable' ? (
           <div className="empty">
-            <strong>No jobs match this view.</strong>
-            <span>Submit a Job or adjust the filters.</span>
+            <strong>Worker unavailable.</strong>
+            <span>Inventory cannot be confirmed. Check operational status before acting.</span>
+            <Link href="/settings">View settings and health</Link>
+          </div>
+        ) : null}
+        {!loading && workerState !== 'unavailable' && jobs.length === 0 ? (
+          <div className="empty">
+            <strong>{isFiltered ? 'No jobs match these filters.' : 'No jobs yet.'}</strong>
+            <span>
+              {isFiltered ? 'Clear or adjust the filters.' : 'Submit a Job to start the queue.'}
+            </span>
           </div>
         ) : null}
 
-        <div className="job-list" aria-live="polite">
-          {jobs.map((job) => (
-            <article
-              className="job-row"
-              key={job.id}
-              draggable={job.desiredState === 'QUEUED'}
-              onDragStart={() => setDragged(job.id)}
-              onDragOver={(event) => event.preventDefault()}
-              onDrop={() => void drop(job.id)}
-            >
-              <div className="position" aria-label={`Queue position ${job.position}`}>
-                {job.desiredState === 'QUEUED' ? String(job.position).padStart(2, '0') : '—'}
-              </div>
-              <div className="job-identity">
-                <Link href={`/jobs/${job.id}`}>{job.name}</Link>
-                <span>
-                  {job.namespace} · {job.team || 'unassigned'}
-                </span>
-              </div>
-              <Status state={job.observedState} />
-              <div className="job-meta">
-                <span>P{job.priority}</span>
-                <span>
-                  {job.scheduledFor ? formatTimestamp(job.scheduledFor) : 'Ready now'}
-                </span>
-              </div>
-              {job.desiredState === 'QUEUED' || job.desiredState === 'PAUSED' ? (
-                <QueueEditor
-                  key={`${job.id}-${job.version}`}
-                  job={job}
-                  onSaved={refresh}
-                  onError={(message) => setError(message)}
-                />
-              ) : null}
-              <div className="actions">
-                {job.desiredState === 'QUEUED' ? (
-                  <>
-                    <button
-                      aria-label={`Move ${job.name} up`}
-                      disabled={queueIndexes.get(job.id) === 0}
-                      onClick={() => void move(job.id, -1)}
-                    >
-                      ↑
-                    </button>
-                    <button
-                      aria-label={`Move ${job.name} down`}
-                      disabled={queueIndexes.get(job.id) === queued.length - 1}
-                      onClick={() => void move(job.id, 1)}
-                    >
-                      ↓
-                    </button>
-                  </>
-                ) : null}
-                {job.observedState === 'RUNNING' || job.desiredState === 'QUEUED' ? (
-                  <button onClick={() => void command(job, 'pause')}>Pause</button>
-                ) : null}
-                {job.observedState === 'PAUSED' ? (
-                  <button onClick={() => void command(job, 'resume')}>Resume</button>
-                ) : null}
-                {job.observedState === 'FAILED' || job.desiredState === 'CANCELLED' ? (
-                  <button onClick={() => void command(job, 'retry')}>Retry</button>
-                ) : null}
-                {!['COMPLETED', 'CANCELLED'].includes(job.observedState) ? (
-                  <button className="danger" onClick={() => void command(job, 'terminate')}>
-                    Terminate
-                  </button>
-                ) : null}
-              </div>
-            </article>
-          ))}
-        </div>
+        {!loading && workerState !== 'unavailable' ? (
+          <div className="job-list" aria-live="polite">
+            {jobs.map((job) => (
+              <article className="job-row inventory-row" key={job.id}>
+                <div className="position" aria-label={`Queue position ${job.position}`}>
+                  {job.desiredState === 'QUEUED' ? String(job.position).padStart(2, '0') : '—'}
+                </div>
+                <div className="job-identity">
+                  <Link href={`/jobs/${job.id}`}>{job.name}</Link>
+                  <span>
+                    {job.namespace} · {job.team || 'unassigned'}
+                  </span>
+                </div>
+                <div className="badge-stack">
+                  <Status state={job.observedState} label={pendingLifecycleLabel(job)} />
+                  <Badge value={job.managementMode} />
+                  <Badge value={job.syncStatus} />
+                </div>
+                <div className="job-meta">
+                  <span>P{job.priority}</span>
+                  <span>{job.scheduledFor ? formatTimestamp(job.scheduledFor) : 'Ready now'}</span>
+                </div>
+                <LifecycleActions compact job={job} onUpdated={applyCommand} onError={setError} />
+              </article>
+            ))}
+          </div>
+        ) : null}
       </section>
     </main>
   );
 }
 
-function applyOptimisticOrder(jobs: Job[], ids: string[]) {
-  const positions = new Map(ids.map((id, index) => [id, index + 1]));
-  return jobs
-    .map((job) => {
-      const position = positions.get(job.id);
-      return position === undefined ? job : { ...job, position };
-    })
-    .sort((left, right) => {
-      if (left.desiredState === 'QUEUED' && right.desiredState === 'QUEUED') {
-        return left.position - right.position;
-      }
-      return 0;
-    });
-}
-
-function QueueEditor({
-  job,
-  onSaved,
-  onError,
-}: {
-  job: Job;
-  onSaved: () => Promise<void>;
-  onError: (message: string) => void;
-}) {
-  const [priority, setPriority] = useState(String(job.priority));
-  const [scheduledFor, setScheduledFor] = useState(toDateTimeInput(job.scheduledFor));
-  const [saving, setSaving] = useState(false);
-
-  async function save() {
-    setSaving(true);
-    try {
-      await client.updateQueue(job.id, {
-        priority: Number(priority),
-        position: job.position,
-        version: job.version,
-        scheduledFor: scheduledFor ? new Date(`${scheduledFor}:00Z`).toISOString() : null,
-      });
-      await onSaved();
-    } catch (reason) {
-      onError(reason instanceof Error ? reason.message : 'Unable to update queue settings');
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div className="queue-editor" aria-label={`Queue settings for ${job.name}`}>
-      <label>
-        <span className="sr-only">Priority</span>
-        <input
-          aria-label={`Priority for ${job.name}`}
-          type="number"
-          min="-1000"
-          max="1000"
-          value={priority}
-          onChange={(event) => setPriority(event.target.value)}
-        />
-      </label>
-      <label>
-        <span className="sr-only">Do not start before, UTC</span>
-        <input
-          aria-label={`Do not start ${job.name} before, UTC`}
-          type="datetime-local"
-          value={scheduledFor}
-          onChange={(event) => setScheduledFor(event.target.value)}
-        />
-      </label>
-      <button disabled={saving} onClick={() => void save()}>
-        {saving ? 'Saving…' : 'Save'}
-      </button>
-    </div>
-  );
-}
-
-function toDateTimeInput(value?: string) {
-  if (!value) return '';
-  return new Date(value).toISOString().slice(0, 16);
+function toApiFilters(filters: InventoryFilters): JobFilters {
+  return {
+    ...(filters.status === 'ALL' ? {} : { status: filters.status }),
+    ...(filters.search ? { search: filters.search } : {}),
+    ...(filters.namespace ? { namespace: filters.namespace } : {}),
+    ...(filters.team ? { team: filters.team } : {}),
+    ...(filters.priority ? { priority: Number(filters.priority) } : {}),
+  };
 }
 
 function formatTimestamp(value: string) {
@@ -411,6 +321,14 @@ function Metric({ label, value, tone }: { label: string; value: number; tone: st
   );
 }
 
-export function Status({ state }: { state: JobState }) {
-  return <span className={`status status-${state.toLowerCase()}`}>{state}</span>;
+export function Status({ state, label }: { state: JobState; label?: string }) {
+  return (
+    <span className={`status status-${state.toLowerCase()}`}>
+      {label ? `${label} · ${state}` : state}
+    </span>
+  );
+}
+
+export function Badge({ value }: { value: string }) {
+  return <span className={`status badge badge-${value.toLowerCase()}`}>{value}</span>;
 }

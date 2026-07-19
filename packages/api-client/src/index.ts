@@ -7,7 +7,9 @@ export const apiContractVersion = '1.0.0' as const;
 export type JobState = components['schemas']['JobState'];
 export type Job = components['schemas']['Job'];
 export type JobList = components['schemas']['JobList'];
+export type JobFacets = components['schemas']['JobFacets'];
 export type JobEvent = components['schemas']['JobEvent'];
+export type SystemStatus = components['schemas']['SystemStatus'];
 type GeneratedCreateJob = components['schemas']['CreateJob'];
 export type CreateJob = Omit<GeneratedCreateJob, 'priority'> & {
   priority?: GeneratedCreateJob['priority'];
@@ -39,6 +41,18 @@ export class KubeQueueClient {
       if (value !== undefined && value !== '') query.set(key, String(value));
     }
     return this.request<JobList>(`/jobs?${query}`);
+  }
+
+  getSystemStatus() {
+    return this.request<SystemStatus>('/system/status');
+  }
+
+  getJobFacets() {
+    return this.request<JobFacets>('/jobs/facets');
+  }
+
+  getQueue() {
+    return this.request<JobList>('/queue');
   }
 
   getJob(id: string) {

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	authorizationv1 "k8s.io/api/authorization/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -117,15 +118,72 @@ func (c *Client) ListJobs(_ context.Context, namespace string) ([]batchv1.Job, e
 	if !synced {
 		return nil, fmt.Errorf("job informer for namespace %s is not synchronized", namespace)
 	}
-	items, err := lister.Jobs(namespace).List(labels.Everything())
+	var items []*batchv1.Job
+	var err error
+	if namespace == metav1.NamespaceAll {
+		items, err = lister.List(labels.Everything())
+	} else {
+		items, err = lister.Jobs(namespace).List(labels.Everything())
+	}
 	if err != nil {
 		return nil, err
 	}
 	result := make([]batchv1.Job, 0, len(items))
 	for _, item := range items {
+		if IsIgnored(*item) {
+			continue
+		}
 		result = append(result, *item.DeepCopy())
 	}
 	return result, nil
+}
+
+func (c *Client) InformerSynced(namespace string) bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.synced[namespace]
+}
+
+func (c *Client) ListNamespaces(ctx context.Context) ([]string, error) {
+	items, err := c.client.CoreV1().Namespaces().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	namespaces := make([]string, 0, len(items.Items))
+	for _, item := range items.Items {
+		namespaces = append(namespaces, item.Name)
+	}
+	return namespaces, nil
+}
+
+func (c *Client) CheckJobAccess(ctx context.Context, namespace string) (bool, string, error) {
+	for _, verb := range []string{"get", "list", "watch", "create", "patch", "delete"} {
+		review, err := c.client.AuthorizationV1().SelfSubjectAccessReviews().Create(
+			ctx,
+			&authorizationv1.SelfSubjectAccessReview{
+				Spec: authorizationv1.SelfSubjectAccessReviewSpec{
+					ResourceAttributes: &authorizationv1.ResourceAttributes{
+						Namespace: namespace,
+						Verb:      verb,
+						Group:     "batch",
+						Resource:  "jobs",
+					},
+				},
+			},
+			metav1.CreateOptions{},
+		)
+		if err != nil {
+			return false, "", fmt.Errorf("check %s Job access: %w", verb, err)
+		}
+		if !review.Status.Allowed {
+			message := strings.TrimSpace(review.Status.Reason)
+			if message == "" {
+				message = fmt.Sprintf("%s access to Jobs is denied", verb)
+			}
+			return false, message, nil
+		}
+	}
+	return true, "", nil
 }
 
 func (c *Client) CreateJob(
@@ -301,6 +359,26 @@ func IsIgnored(job batchv1.Job) bool {
 }
 
 func IsNotFound(err error) bool { return apierrors.IsNotFound(err) }
+
+func ClassifyError(err error) (string, string) {
+	switch {
+	case apierrors.IsForbidden(err), apierrors.IsUnauthorized(err):
+		return "KUBERNETES_AUTHORIZATION_FAILED",
+			"Grant the worker the required Job permissions for the namespace"
+	case apierrors.IsConflict(err):
+		return "KUBERNETES_VERSION_CONFLICT",
+			"Wait for the latest Kubernetes observation and retry the action"
+	case apierrors.IsInvalid(err), apierrors.IsBadRequest(err):
+		return "KUBERNETES_REQUEST_INVALID",
+			"Correct the Job template or requested lifecycle operation"
+	case apierrors.IsTooManyRequests(err), apierrors.IsTimeout(err), apierrors.IsServerTimeout(err):
+		return "KUBERNETES_API_RETRY",
+			"Check Kubernetes API availability and throttling"
+	default:
+		return "RECONCILIATION_FAILED",
+			"Check worker logs and Kubernetes status, then retry the operation"
+	}
+}
 
 func (c *Client) notify() {
 	select {

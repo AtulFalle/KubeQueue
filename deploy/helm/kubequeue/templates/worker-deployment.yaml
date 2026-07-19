@@ -13,6 +13,8 @@ spec:
       app.kubernetes.io/component: worker
   template:
     metadata:
+      annotations:
+        checksum/runtime-config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
       labels:
         app.kubernetes.io/name: {{ include "kubequeue.name" . }}
         app.kubernetes.io/instance: {{ .Release.Name }}
@@ -20,6 +22,10 @@ spec:
     spec:
       serviceAccountName: {{ include "kubequeue.serviceAccountName" . }}
       automountServiceAccountToken: true
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       securityContext:
         runAsNonRoot: true
         seccompProfile:
@@ -28,18 +34,32 @@ spec:
         - name: worker
           image: "{{ .Values.worker.image.repository }}:{{ default .Chart.AppVersion .Values.worker.image.tag }}"
           imagePullPolicy: {{ .Values.worker.image.pullPolicy }}
+          ports:
+            - name: health
+              containerPort: 8081
+          envFrom:
+            - configMapRef:
+                name: {{ include "kubequeue.fullname" . }}-runtime
           env:
             - name: KUBEQUEUE_DATABASE_URL
               valueFrom:
                 secretKeyRef:
                   name: {{ default (printf "%s-config" (include "kubequeue.fullname" .)) .Values.database.existingSecret }}
                   key: {{ .Values.database.existingSecretKey }}
-            - name: KUBEQUEUE_WATCH_NAMESPACES
-              value: {{ default .Release.Namespace .Values.config.watchNamespaces | quote }}
-            - name: KUBEQUEUE_GLOBAL_CONCURRENCY
-              value: {{ .Values.config.globalConcurrency | quote }}
-            - name: KUBEQUEUE_NAMESPACE_CONCURRENCY
-              value: {{ .Values.config.namespaceConcurrency | quote }}
+            - name: KUBEQUEUE_RELEASE_VERSION
+              value: {{ .Chart.AppVersion | quote }}
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: health
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            periodSeconds: 10
+            failureThreshold: 3
           resources:
             {{- toYaml .Values.worker.resources | nindent 12 }}
           securityContext:

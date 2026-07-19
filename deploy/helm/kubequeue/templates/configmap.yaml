@@ -1,0 +1,23 @@
+{{- $watchNamespaces := .Values.watch.namespaces -}}
+{{- if and (eq .Values.watch.mode "selected") (eq (len $watchNamespaces) 0) -}}
+{{- $watchNamespaces = list .Release.Namespace -}}
+{{- end -}}
+{{- $excludedNamespaces := .Values.watch.excludedNamespaces -}}
+{{- if eq .Values.watch.mode "all" -}}
+{{- $excludedNamespaces = concat
+      (list "kube-system" "kube-public" "kube-node-lease" .Release.Namespace)
+      $excludedNamespaces | uniq | sortAlpha -}}
+{{- end -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "kubequeue.fullname" . }}-runtime
+  labels:
+    {{- include "kubequeue.labels" . | nindent 4 }}
+data:
+  KUBEQUEUE_WATCH_MODE: {{ .Values.watch.mode | quote }}
+  KUBEQUEUE_WATCH_NAMESPACES: {{ join "," $watchNamespaces | quote }}
+  KUBEQUEUE_EXCLUDED_NAMESPACES: {{ join "," $excludedNamespaces | quote }}
+  KUBEQUEUE_RELEASE_NAMESPACE: {{ .Release.Namespace | quote }}
+  KUBEQUEUE_GLOBAL_CONCURRENCY: {{ .Values.config.globalConcurrency | quote }}
+  KUBEQUEUE_NAMESPACE_CONCURRENCY: {{ .Values.config.namespaceConcurrency | quote }}

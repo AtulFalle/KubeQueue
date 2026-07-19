@@ -59,6 +59,67 @@ func (s *Store) Close() error { return s.db.Close() }
 
 func (s *Store) Ping(ctx context.Context) error { return s.db.PingContext(ctx) }
 
+func (s *Store) UpdateWorkerStatus(ctx context.Context, status domain.WorkerStatus) error {
+	effectiveNamespaces, err := json.Marshal(status.EffectiveNamespaces)
+	if err != nil {
+		return fmt.Errorf("encode effective namespaces: %w", err)
+	}
+	excludedNamespaces, err := json.Marshal(status.ExcludedNamespaces)
+	if err != nil {
+		return fmt.Errorf("encode excluded namespaces: %w", err)
+	}
+	namespaceStatuses, err := json.Marshal(status.Namespaces)
+	if err != nil {
+		return fmt.Errorf("encode namespace statuses: %w", err)
+	}
+	lastSuccess := ""
+	if status.LastSuccessfulReconciliationAt != nil {
+		lastSuccess = status.LastSuccessfulReconciliationAt.UTC().Format(time.RFC3339Nano)
+	}
+	_, err = s.db.ExecContext(ctx, s.bind(
+		`UPDATE worker_status SET state=?, heartbeat_at=?,
+			last_successful_reconciliation_at=CASE WHEN ?='' THEN last_successful_reconciliation_at ELSE ? END,
+			watch_mode=?, effective_namespaces=?, excluded_namespaces=?, namespace_statuses=?,
+			global_concurrency=?, namespace_concurrency=?, release_version=?, active_error=?, updated_at=?
+			WHERE id=1`),
+		status.State, formatTime(status.HeartbeatAt), lastSuccess, lastSuccess,
+		status.WatchMode, string(effectiveNamespaces), string(excludedNamespaces),
+		string(namespaceStatuses), status.GlobalConcurrency, status.NamespaceConcurrency,
+		status.ReleaseVersion, sanitizeDiagnostic(status.ActiveError),
+		time.Now().UTC().Format(time.RFC3339Nano))
+	return err
+}
+
+func (s *Store) WorkerStatus(ctx context.Context) (domain.WorkerStatus, error) {
+	var status domain.WorkerStatus
+	var heartbeat, lastSuccess, effective, excluded, namespaces string
+	err := s.db.QueryRowContext(ctx, `SELECT state,COALESCE(heartbeat_at,''),
+		COALESCE(last_successful_reconciliation_at,''),watch_mode,effective_namespaces,
+		excluded_namespaces,namespace_statuses,global_concurrency,namespace_concurrency,
+		release_version,active_error FROM worker_status WHERE id=1`).Scan(
+		&status.State, &heartbeat, &lastSuccess, &status.WatchMode, &effective, &excluded,
+		&namespaces, &status.GlobalConcurrency, &status.NamespaceConcurrency,
+		&status.ReleaseVersion, &status.ActiveError,
+	)
+	if err != nil {
+		return domain.WorkerStatus{}, err
+	}
+	status.HeartbeatAt = parseTime(sql.NullString{String: heartbeat, Valid: heartbeat != ""})
+	status.LastSuccessfulReconciliationAt = parseTime(
+		sql.NullString{String: lastSuccess, Valid: lastSuccess != ""},
+	)
+	if err := json.Unmarshal([]byte(effective), &status.EffectiveNamespaces); err != nil {
+		return domain.WorkerStatus{}, fmt.Errorf("decode effective namespaces: %w", err)
+	}
+	if err := json.Unmarshal([]byte(excluded), &status.ExcludedNamespaces); err != nil {
+		return domain.WorkerStatus{}, fmt.Errorf("decode excluded namespaces: %w", err)
+	}
+	if err := json.Unmarshal([]byte(namespaces), &status.Namespaces); err != nil {
+		return domain.WorkerStatus{}, fmt.Errorf("decode namespace statuses: %w", err)
+	}
+	return status, nil
+}
+
 func (s *Store) migrate(ctx context.Context) error {
 	eventsID := "INTEGER PRIMARY KEY AUTOINCREMENT"
 	if s.postgres {
@@ -103,6 +164,9 @@ func (s *Store) migrate(ctx context.Context) error {
 			return fmt.Errorf("read migration %s: %w", name, err)
 		}
 		statement := strings.ReplaceAll(string(migration), "{{EVENTS_ID}}", eventsID)
+		statement = strings.ReplaceAll(
+			statement, "{{ARCHIVE_IGNORED_JOBS}}", s.archiveIgnoredJobsStatement(),
+		)
 		for _, command := range strings.Split(statement, ";") {
 			if strings.TrimSpace(command) == "" {
 				continue
@@ -123,6 +187,24 @@ func (s *Store) migrate(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+func (s *Store) archiveIgnoredJobsStatement() string {
+	ignoredAnnotation := `json_extract(template, '$.metadata.annotations."kubequeue.io/ignore"')`
+	helmHookAnnotation := `json_extract(template, '$.metadata.annotations."helm.sh/hook"')`
+	internalLabel := `json_extract(template, '$.metadata.labels."kubequeue.io/internal"')`
+	if s.postgres {
+		ignoredAnnotation = `template::jsonb -> 'metadata' -> 'annotations' ->> 'kubequeue.io/ignore'`
+		helmHookAnnotation = `template::jsonb -> 'metadata' -> 'annotations' ->> 'helm.sh/hook'`
+		internalLabel = `template::jsonb -> 'metadata' -> 'labels' ->> 'kubequeue.io/internal'`
+	}
+	return fmt.Sprintf(`UPDATE jobs
+		SET management_mode='IGNORED', sync_status='STALE',
+			archived_at=COALESCE(archived_at, updated_at)
+		WHERE LOWER(COALESCE(%s, ''))='true'
+			OR COALESCE(%s, '')<>''
+			OR LOWER(COALESCE(%s, ''))='true'`,
+		ignoredAnnotation, helmHookAnnotation, internalLabel)
 }
 
 func (s *Store) Create(ctx context.Context, input domain.CreateJob) (domain.Job, error) {
@@ -240,15 +322,16 @@ func (s *Store) insert(ctx context.Context, tx *sql.Tx, job domain.Job) error {
 		(id,parent_id,name,namespace,team,priority,position,desired_state,observed_state,scheduled_for,
 		 kubernetes_uid,template,attempt,version,created_at,updated_at,management_mode,sync_status,
 		 resource_version,last_seen_at,observed_at,observed_reason,observed_message,pending_action,
-		 last_error,reconcile_retries,next_reconcile_at,archived_at)
-		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`),
+		 last_error,last_error_code,last_error_remediation,reconcile_retries,next_reconcile_at,archived_at)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`),
 		job.ID, job.ParentID, job.Name, job.Namespace, job.Team, job.Priority, job.Position,
 		job.DesiredState, job.ObservedState, formatTime(job.ScheduledFor), job.KubernetesUID,
 		string(job.Template), job.Attempt, job.Version, job.CreatedAt.Format(time.RFC3339Nano),
 		job.UpdatedAt.Format(time.RFC3339Nano), job.ManagementMode, job.SyncStatus,
 		job.ResourceVersion, formatTime(job.LastSeenAt), formatTime(job.ObservedAt),
 		job.ObservedReason, job.ObservedMessage, job.PendingAction, job.LastError,
-		job.ReconcileRetries, formatTime(job.NextReconcileAt), formatTime(job.ArchivedAt))
+		job.LastErrorCode, job.ErrorRemediation, job.ReconcileRetries,
+		formatTime(job.NextReconcileAt), formatTime(job.ArchivedAt))
 	return err
 }
 
@@ -292,6 +375,131 @@ func (s *Store) List(ctx context.Context, filter ports.JobFilter) ([]domain.Job,
 	return jobs, rows.Err()
 }
 
+func (s *Store) Facets(ctx context.Context) (domain.JobFacets, error) {
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{
+		Isolation: sql.LevelSerializable,
+		ReadOnly:  true,
+	})
+	if err != nil {
+		return domain.JobFacets{}, fmt.Errorf("begin facets snapshot: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	facets := domain.JobFacets{
+		ObservedStateCounts: make(map[string]int),
+		Namespaces:          make([]string, 0),
+		Teams:               make([]string, 0),
+	}
+	if err := tx.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM jobs WHERE archived_at IS NULL`,
+	).Scan(&facets.Total); err != nil {
+		return domain.JobFacets{}, fmt.Errorf("count jobs for facets: %w", err)
+	}
+
+	rows, err := tx.QueryContext(ctx, `SELECT observed_state,COUNT(*) FROM jobs
+		WHERE archived_at IS NULL GROUP BY observed_state ORDER BY observed_state`)
+	if err != nil {
+		return domain.JobFacets{}, fmt.Errorf("count observed states for facets: %w", err)
+	}
+	for rows.Next() {
+		var state string
+		var count int
+		if err := rows.Scan(&state, &count); err != nil {
+			_ = rows.Close()
+			return domain.JobFacets{}, fmt.Errorf("scan observed state facet: %w", err)
+		}
+		facets.ObservedStateCounts[state] = count
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return domain.JobFacets{}, fmt.Errorf("read observed state facets: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return domain.JobFacets{}, fmt.Errorf("close observed state facets: %w", err)
+	}
+
+	if err := scanStringFacet(ctx, tx,
+		`SELECT DISTINCT namespace FROM jobs
+		 WHERE archived_at IS NULL AND namespace<>'' ORDER BY namespace`,
+		&facets.Namespaces,
+	); err != nil {
+		return domain.JobFacets{}, fmt.Errorf("read namespace facets: %w", err)
+	}
+	if err := scanStringFacet(ctx, tx,
+		`SELECT DISTINCT team FROM jobs
+		 WHERE archived_at IS NULL AND team<>'' ORDER BY team`,
+		&facets.Teams,
+	); err != nil {
+		return domain.JobFacets{}, fmt.Errorf("read team facets: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return domain.JobFacets{}, fmt.Errorf("commit facets snapshot: %w", err)
+	}
+	return facets, nil
+}
+
+func (s *Store) Queue(ctx context.Context) ([]domain.Job, int64, error) {
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{
+		Isolation: sql.LevelSerializable,
+		ReadOnly:  true,
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("begin queue snapshot: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var version int64
+	if err := tx.QueryRowContext(ctx,
+		`SELECT value FROM control_plane_metadata WHERE key='queue_version'`,
+	).Scan(&version); err != nil {
+		return nil, 0, fmt.Errorf("read queue version: %w", err)
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT `+jobColumns+` FROM jobs
+		WHERE archived_at IS NULL AND management_mode='MANAGED' AND desired_state='QUEUED'
+		AND observed_state IN ('CREATED','PAUSED')
+		AND sync_status NOT IN ('MISSING','STALE','OUT_OF_SCOPE','CONFLICTED')
+		ORDER BY priority DESC,position,created_at,id`)
+	if err != nil {
+		return nil, 0, fmt.Errorf("query queue: %w", err)
+	}
+	jobs := make([]domain.Job, 0)
+	for rows.Next() {
+		job, err := scanJob(rows)
+		if err != nil {
+			_ = rows.Close()
+			return nil, 0, fmt.Errorf("scan queued job: %w", err)
+		}
+		jobs = append(jobs, job)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, 0, fmt.Errorf("read queue: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, 0, fmt.Errorf("close queue: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, 0, fmt.Errorf("commit queue snapshot: %w", err)
+	}
+	return jobs, version, nil
+}
+
+func scanStringFacet(ctx context.Context, tx *sql.Tx, query string, values *[]string) error {
+	rows, err := tx.QueryContext(ctx, query)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var value string
+		if err := rows.Scan(&value); err != nil {
+			return err
+		}
+		*values = append(*values, value)
+	}
+	return rows.Err()
+}
+
 func (s *Store) Get(ctx context.Context, id string) (domain.Job, error) {
 	job, err := scanJob(s.db.QueryRowContext(ctx, s.bind(
 		`SELECT `+jobColumns+` FROM jobs WHERE id = ?`), id))
@@ -313,7 +521,8 @@ func (s *Store) SetDesiredState(ctx context.Context, id string, state domain.Sta
 	err = s.transaction(ctx, func(tx *sql.Tx) error {
 		result, err := tx.ExecContext(ctx, s.bind(
 			`UPDATE jobs SET desired_state=?, sync_status='PENDING', pending_action=?,
-			 last_error='', reconcile_retries=0, next_reconcile_at=NULL,
+			 last_error='', last_error_code='', last_error_remediation='',
+			 reconcile_retries=0, next_reconcile_at=NULL,
 			 version=version+1, updated_at=? WHERE id=?`),
 			state, string(state), now, id)
 		if err != nil {
@@ -321,6 +530,13 @@ func (s *Store) SetDesiredState(ctx context.Context, id string, state domain.Sta
 		}
 		if count, err := result.RowsAffected(); err != nil || count == 0 {
 			return ports.ErrNotFound
+		}
+		if current.DesiredState == domain.StateQueued || state == domain.StateQueued {
+			if _, err := tx.ExecContext(ctx,
+				`UPDATE control_plane_metadata SET value=value+1 WHERE key='queue_version'`,
+			); err != nil {
+				return err
+			}
 		}
 		return s.addEvent(ctx, tx, id, "DESIRED_STATE_CHANGED",
 			"Desired state changed to "+string(state), nil)
@@ -357,7 +573,8 @@ func (s *Store) SetObserved(
 			 management_mode=?, sync_status=?, resource_version=?, last_seen_at=?, observed_at=?,
 			 observed_reason=?, observed_message=?,
 			 pending_action=CASE WHEN ?='SYNCED' THEN '' ELSE pending_action END,
-			 last_error='', reconcile_retries=0, next_reconcile_at=NULL,
+			 last_error='', last_error_code='', last_error_remediation='',
+			 reconcile_retries=0, next_reconcile_at=NULL,
 			 version=version+1, updated_at=?
 			 WHERE id=? AND resource_version=?`),
 			observation.State, observation.KubernetesUID, observation.KubernetesUID,
@@ -375,6 +592,18 @@ func (s *Store) SetObserved(
 		}
 		if count == 0 {
 			return nil
+		}
+		if queueMember(
+			current.DesiredState, current.ObservedState, current.ManagementMode, current.SyncStatus,
+		) != queueMember(
+			current.DesiredState, observation.State,
+			observation.ManagementMode, observation.SyncStatus,
+		) {
+			if _, err := tx.ExecContext(ctx,
+				`UPDATE control_plane_metadata SET value=value+1 WHERE key='queue_version'`,
+			); err != nil {
+				return err
+			}
 		}
 		return s.addEvent(ctx, tx, id, "OBSERVED_STATE_CHANGED",
 			"Kubernetes state changed to "+string(observation.State), nil)
@@ -402,6 +631,16 @@ func (s *Store) MarkMissing(
 		if err != nil || count == 0 {
 			return err
 		}
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE control_plane_metadata SET value=value+1 WHERE key='queue_version'`,
+		); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(
+			ctx, s.bind(`DELETE FROM scheduler_claims WHERE job_id=?`), id,
+		); err != nil {
+			return err
+		}
 		return s.addEvent(ctx, tx, id, "KUBERNETES_JOB_MISSING",
 			"Associated Kubernetes Job is missing", nil)
 	})
@@ -411,14 +650,53 @@ func (s *Store) MarkMissing(
 	return s.Get(ctx, id)
 }
 
+func (s *Store) MarkOutOfScope(
+	ctx context.Context, id, expectedResourceVersion string, observedAt time.Time,
+) (domain.Job, error) {
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	err := s.transaction(ctx, func(tx *sql.Tx) error {
+		result, err := tx.ExecContext(ctx, s.bind(
+			`UPDATE jobs SET sync_status='OUT_OF_SCOPE', observed_at=?,
+			 pending_action='', version=version+1, updated_at=?
+			 WHERE id=? AND resource_version=? AND sync_status<>'OUT_OF_SCOPE'`),
+			observedAt.UTC().Format(time.RFC3339Nano), now, id, expectedResourceVersion)
+		if err != nil {
+			return err
+		}
+		count, err := result.RowsAffected()
+		if err != nil || count == 0 {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE control_plane_metadata SET value=value+1 WHERE key='queue_version'`,
+		); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(
+			ctx, s.bind(`DELETE FROM scheduler_claims WHERE job_id=?`), id,
+		); err != nil {
+			return err
+		}
+		return s.addEvent(ctx, tx, id, "NAMESPACE_OUT_OF_SCOPE",
+			"Namespace is outside the effective KubeQueue scope", nil)
+	})
+	if err != nil {
+		return domain.Job{}, err
+	}
+	return s.Get(ctx, id)
+}
+
 func (s *Store) RecordReconcileError(
-	ctx context.Context, id, expectedResourceVersion, message string, nextRetry time.Time,
+	ctx context.Context, id, expectedResourceVersion, code, message, remediation string,
+	nextRetry time.Time,
 ) error {
 	result, err := s.db.ExecContext(ctx, s.bind(
 		`UPDATE jobs SET sync_status='ERROR', last_error=?, reconcile_retries=reconcile_retries+1,
-		 next_reconcile_at=?, version=version+1, updated_at=?
+		 last_error_code=?, last_error_remediation=?, next_reconcile_at=?,
+		 version=version+1, updated_at=?
 		 WHERE id=? AND resource_version=?`),
-		sanitizeDiagnostic(message), nextRetry.UTC().Format(time.RFC3339Nano),
+		sanitizeDiagnostic(message), sanitizeDiagnostic(code), sanitizeDiagnostic(remediation),
+		nextRetry.UTC().Format(time.RFC3339Nano),
 		time.Now().UTC().Format(time.RFC3339Nano), id, expectedResourceVersion)
 	if err != nil {
 		return err
@@ -463,6 +741,11 @@ func (s *Store) Archive(ctx context.Context, id string, archivedAt time.Time) er
 		); err != nil {
 			return err
 		}
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE control_plane_metadata SET value=value+1 WHERE key='queue_version'`,
+		); err != nil {
+			return err
+		}
 		return s.addEvent(ctx, tx, id, "JOB_ARCHIVED", "Stale Job record archived", nil)
 	})
 }
@@ -478,7 +761,8 @@ func (s *Store) UpdateQueue(
 		result, err := tx.ExecContext(ctx, s.bind(
 			`UPDATE jobs SET priority=?, position=?, scheduled_for=?, version=version+1, updated_at=?
 			 WHERE id=? AND version=? AND management_mode='MANAGED'
-			 AND archived_at IS NULL AND desired_state IN ('QUEUED','PAUSED')`),
+			 AND sync_status<>'OUT_OF_SCOPE'
+			 AND archived_at IS NULL AND desired_state='QUEUED'`),
 			priority, position, formatTime(scheduledFor),
 			time.Now().UTC().Format(time.RFC3339Nano), id, version)
 		if err != nil {
@@ -520,12 +804,61 @@ func (s *Store) Reorder(ctx context.Context, ids []string, expectedVersion int64
 		if version != expectedVersion {
 			return ports.ErrConflict
 		}
+		seen := make(map[string]struct{}, len(ids))
+		for _, id := range ids {
+			if _, duplicate := seen[id]; duplicate {
+				return ports.ErrConflict
+			}
+			seen[id] = struct{}{}
+		}
+		query := `SELECT id,priority FROM jobs
+			WHERE archived_at IS NULL AND management_mode='MANAGED' AND desired_state='QUEUED'
+			AND observed_state IN ('CREATED','PAUSED')
+			AND sync_status NOT IN ('MISSING','STALE','OUT_OF_SCOPE','CONFLICTED')
+			ORDER BY priority DESC,position,created_at,id` + lock
+		rows, err := tx.QueryContext(ctx, query)
+		if err != nil {
+			return err
+		}
+		currentIDs := make([]string, 0, len(ids))
+		priorities := make(map[string]int, len(ids))
+		for rows.Next() {
+			var id string
+			var priority int
+			if err := rows.Scan(&id, &priority); err != nil {
+				_ = rows.Close()
+				return err
+			}
+			currentIDs = append(currentIDs, id)
+			priorities[id] = priority
+		}
+		if err := rows.Err(); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		if err := rows.Close(); err != nil {
+			return err
+		}
+		if len(currentIDs) != len(ids) {
+			return ports.ErrConflict
+		}
+		for _, id := range currentIDs {
+			if _, exists := seen[id]; !exists {
+				return ports.ErrConflict
+			}
+		}
+		for index := 1; index < len(ids); index++ {
+			if priorities[ids[index-1]] < priorities[ids[index]] {
+				return ports.ErrConflict
+			}
+		}
 		nextVersion := version + 1
 		for position, id := range ids {
 			result, err := tx.ExecContext(ctx, s.bind(
 				`UPDATE jobs SET position=?, version=version+1, updated_at=?
 				 WHERE id=? AND management_mode='MANAGED'
-				 AND archived_at IS NULL AND desired_state IN ('QUEUED','PAUSED')`),
+				 AND sync_status NOT IN ('MISSING','STALE','OUT_OF_SCOPE','CONFLICTED')
+				 AND archived_at IS NULL AND desired_state='QUEUED'`),
 				position+1, time.Now().UTC().Format(time.RFC3339Nano), id)
 			if err != nil {
 				return err
@@ -553,6 +886,25 @@ func (s *Store) QueueVersion(ctx context.Context) (int64, error) {
 		`SELECT value FROM control_plane_metadata WHERE key='queue_version'`,
 	).Scan(&version)
 	return version, err
+}
+
+func queueMember(
+	desired, observed domain.State, management domain.ManagementMode, syncStatus domain.SyncStatus,
+) bool {
+	if desired != domain.StateQueued || management != domain.ManagementManaged {
+		return false
+	}
+	if observed != domain.StateCreated && observed != domain.StatePaused {
+		return false
+	}
+	switch syncStatus {
+	case domain.SyncStatusMissing, domain.SyncStatusStale, domain.SyncStatusOutOfScope,
+		domain.SyncStatusConflicted:
+		return false
+	case domain.SyncStatusSynced, domain.SyncStatusPending, domain.SyncStatusError:
+		return true
+	}
+	return false
 }
 
 func (s *Store) Events(ctx context.Context, id string) ([]domain.Event, error) {
@@ -718,7 +1070,8 @@ func (s *Store) bind(query string) string {
 const jobColumns = `id,parent_id,name,namespace,team,priority,position,desired_state,observed_state,
 	scheduled_for,kubernetes_uid,template,attempt,version,created_at,updated_at,management_mode,
 	sync_status,resource_version,last_seen_at,observed_at,observed_reason,observed_message,
-	pending_action,last_error,reconcile_retries,next_reconcile_at,archived_at`
+	pending_action,last_error,last_error_code,last_error_remediation,reconcile_retries,
+	next_reconcile_at,archived_at`
 
 func prefixedJobColumns(prefix string) string {
 	columns := strings.Split(strings.ReplaceAll(jobColumns, "\n", ""), ",")
@@ -741,7 +1094,8 @@ func scanJob(row scanner) (domain.Job, error) {
 		&desired, &observed, &scheduled, &job.KubernetesUID, &template, &job.Attempt,
 		&job.Version, &created, &updated, &management, &syncStatus, &job.ResourceVersion,
 		&lastSeen, &observedAt, &job.ObservedReason, &job.ObservedMessage, &job.PendingAction,
-		&job.LastError, &job.ReconcileRetries, &nextReconcile, &archived,
+		&job.LastError, &job.LastErrorCode, &job.ErrorRemediation, &job.ReconcileRetries,
+		&nextReconcile, &archived,
 	)
 	if err != nil {
 		return domain.Job{}, err

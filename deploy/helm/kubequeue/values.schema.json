@@ -14,11 +14,48 @@
         "name": { "type": "string" }
       }
     },
+    "rbac": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["create", "allowClusterWide"],
+      "properties": {
+        "create": { "type": "boolean" },
+        "allowClusterWide": { "type": "boolean" }
+      }
+    },
+    "imagePullSecrets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "watch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "namespaces", "excludedNamespaces"],
+      "properties": {
+        "mode": { "type": "string", "enum": ["selected", "all"] },
+        "namespaces": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/namespace" }
+        },
+        "excludedNamespaces": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/namespace" }
+        }
+      }
+    },
     "config": {
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "watchNamespaces",
         "globalConcurrency",
         "namespaceConcurrency",
         "adminToken",
@@ -26,7 +63,6 @@
         "adminTokenExistingSecretKey"
       ],
       "properties": {
-        "watchNamespaces": { "type": "string" },
         "globalConcurrency": { "type": "integer", "minimum": 1 },
         "namespaceConcurrency": { "type": "integer", "minimum": 1 },
         "adminToken": { "type": "string" },
@@ -54,8 +90,67 @@
     "worker": { "$ref": "#/$defs/workload" },
     "web": { "$ref": "#/$defs/workloadWithPort" }
   },
-  "required": ["api", "worker", "web", "serviceAccount", "config", "database", "networkPolicy"],
+  "required": [
+    "api",
+    "worker",
+    "web",
+    "serviceAccount",
+    "rbac",
+    "imagePullSecrets",
+    "watch",
+    "config",
+    "database",
+    "networkPolicy"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "watch": {
+            "properties": {
+              "mode": { "const": "all" }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "rbac": {
+            "properties": {
+              "allowClusterWide": { "const": true }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "serviceAccount": {
+            "properties": {
+              "create": { "const": false }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "serviceAccount": {
+            "properties": {
+              "name": { "minLength": 1 }
+            }
+          }
+        }
+      }
+    }
+  ],
   "$defs": {
+    "namespace": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 63,
+      "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"
+    },
     "image": {
       "type": "object",
       "additionalProperties": false,

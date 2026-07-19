@@ -122,8 +122,21 @@ being rebound silently.
 Durable synchronization state is separate from lifecycle state. Missing Kubernetes objects retain
 their last observed lifecycle and become `MISSING`; stale, conflicted, archived, and out-of-scope
 records do not consume scheduling concurrency. Kubernetes resource versions are stored as opaque
-compare-and-set tokens. These synchronization diagnostics remain internal until the Phase 2 status
-API is introduced.
+compare-and-set tokens. Public Job responses expose bounded synchronization status, pending intent,
+sanitized observations, and stable reconciliation diagnostics without exposing resource versions
+or retry internals.
+
+Namespace authority is explicit. Selected mode is the least-privilege default and grants one
+Role/RoleBinding per configured namespace. All-namespace mode requires explicit cluster-wide RBAC
+consent and always excludes Kubernetes system namespaces plus the KubeQueue release namespace.
+Helm renders the effective scope into a checksummed ConfigMap consumed by both API and worker. The
+API rejects submissions outside that scope before durable intent is created.
+
+The worker publishes a durable heartbeat, last successful reconciliation, effective scope,
+informer synchronization, Kubernetes authorization, concurrency, release, and sanitized error
+status. Its readiness probe remains false until database access, informer synchronization, and
+required Job permissions are healthy. `GET /api/v1/system/status` exposes this bounded operational
+view so clients can distinguish an empty queue from unavailable or incomplete inventory.
 
 ## Phase 1 trust boundary
 
