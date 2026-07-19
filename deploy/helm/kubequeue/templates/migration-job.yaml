@@ -34,9 +34,8 @@ spec:
         - name: migrate
           image: "{{ .Values.api.image.repository }}:{{ default .Chart.AppVersion .Values.api.image.tag }}"
           imagePullPolicy: {{ .Values.api.image.pullPolicy }}
+          args: ["migrate"]
           env:
-            - name: KUBEQUEUE_MIGRATE_ONLY
-              value: "true"
             - name: KUBEQUEUE_DATABASE_URL
               {{- if .Values.database.existingSecret }}
               valueFrom:

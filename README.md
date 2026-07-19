@@ -138,7 +138,8 @@ pnpm check
 ```
 
 See [docs/architecture.md](docs/architecture.md) and
-[CONTRIBUTING.md](CONTRIBUTING.md) before implementing product behavior.
+[CONTRIBUTING.md](CONTRIBUTING.md) before implementing product behavior. Before starting Phase 3,
+run the [Phase 2 manual acceptance checklist](docs/phase-2-manual-acceptance.md).
 
 ## Phase 1 behavior
 

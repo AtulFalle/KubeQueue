@@ -2,6 +2,7 @@ package reconciler
 
 import (
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -63,6 +64,87 @@ func TestReconcileAdmitsJobOnlyAfterCreatingItSuspended(t *testing.T) {
 	}
 	if stored.ObservedState != domain.StatePaused || stored.SyncStatus != domain.SyncStatusPending {
 		t.Fatalf("stored admission state = %#v", stored)
+	}
+}
+
+func TestTerminationRemainsPendingUntilDeletionIsObserved(t *testing.T) {
+	ctx := t.Context()
+	store, err := persistence.Open(ctx, "file:test-termination-convergence?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	job, err := store.Create(ctx, domain.CreateJob{
+		Name: "terminate-me", Namespace: "default",
+		Template: json.RawMessage(`{
+			"spec":{"template":{"spec":{"restartPolicy":"Never","containers":[{"name":"job","image":"busybox"}]}}}
+		}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, err = store.SetObserved(ctx, job.ID, domain.Observation{
+		State: domain.StateRunning, KubernetesUID: "terminate-uid", ResourceVersion: "1",
+		ExpectedResourceVersion: job.ResourceVersion, ManagementMode: domain.ManagementManaged,
+		SyncStatus: domain.SyncStatusSynced,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, err = store.SetDesiredState(ctx, job.ID, domain.StateCancelled)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	clientset := fake.NewClientset(&batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "terminate-me", Namespace: "default", UID: "terminate-uid", ResourceVersion: "1",
+			Labels: map[string]string{
+				"kubequeue.io/job-id":  job.ID,
+				"kubequeue.io/managed": "true",
+			},
+		},
+		Spec: batchv1.JobSpec{Template: corev1.PodTemplateSpec{Spec: corev1.PodSpec{
+			RestartPolicy: corev1.RestartPolicyNever,
+		}}},
+		Status: batchv1.JobStatus{Active: 1},
+	})
+	client := kube.New(clientset)
+	changes, err := client.Start(ctx, []string{"default"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForInformerReady(t, client, changes, "default")
+	reconciler := New(store, client, selectedScope(t, "default"))
+
+	if err := reconciler.applyCommands(ctx, []domain.Job{job}); err != nil {
+		t.Fatal(err)
+	}
+	pending, err := store.Get(ctx, job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !pending.ActionPending || pending.ObservedState == domain.StateCancelled {
+		t.Fatalf("termination converged before deletion observation: %#v", pending)
+	}
+
+	deadline := time.Now().Add(time.Second)
+	for {
+		if err := reconciler.discover(ctx, "default"); err != nil {
+			t.Fatal(err)
+		}
+		converged, err := store.Get(ctx, job.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !converged.ActionPending && converged.ObservedState == domain.StateCancelled &&
+			converged.SyncStatus == domain.SyncStatusSynced {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("termination did not converge after deletion observation: %#v", converged)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 
@@ -362,6 +444,42 @@ func TestRecordStatusReportsSynchronizedAuthorizedNamespace(t *testing.T) {
 		len(status.Namespaces) != 1 || !status.Namespaces[0].Authorized ||
 		!status.Namespaces[0].InformerSynced {
 		t.Fatalf("worker status = %#v", status)
+	}
+}
+
+func TestRecordStatusKeepsReadinessForIsolatedReconciliationFailure(t *testing.T) {
+	ctx := t.Context()
+	clientset := fake.NewClientset()
+	clientset.PrependReactor(
+		"create", "selfsubjectaccessreviews",
+		func(ktesting.Action) (bool, runtime.Object, error) {
+			return true, &authorizationv1.SelfSubjectAccessReview{
+				Status: authorizationv1.SubjectAccessReviewStatus{Allowed: true},
+			}, nil
+		},
+	)
+	client := kube.New(clientset)
+	changes, err := client.Start(ctx, []string{"default"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForInformerReady(t, client, changes, "default")
+	store, err := persistence.Open(ctx, "file:test-worker-status-degraded?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	reconciler := New(store, client, selectedScope(t, "default"))
+
+	if err := reconciler.recordStatus(ctx, errors.New("one Job failed")); err != nil {
+		t.Fatal(err)
+	}
+	status, err := store.WorkerStatus(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.State != domain.WorkerStateDegraded || !reconciler.Ready() {
+		t.Fatalf("worker status = %#v, ready = %t", status, reconciler.Ready())
 	}
 }
 

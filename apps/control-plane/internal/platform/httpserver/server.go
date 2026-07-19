@@ -21,14 +21,11 @@ const shutdownTimeout = 10 * time.Second
 
 // Run starts the platform HTTP server.
 func Run(ctx context.Context) error {
-	store, err := persistence.Open(ctx, os.Getenv("KUBEQUEUE_DATABASE_URL"))
+	store, err := persistence.OpenCompatible(ctx, os.Getenv("KUBEQUEUE_DATABASE_URL"))
 	if err != nil {
 		return err
 	}
 	defer func() { _ = store.Close() }()
-	if os.Getenv("KUBEQUEUE_MIGRATE_ONLY") == "true" {
-		return nil
-	}
 	namespaceScope, err := config.NamespaceScopeFromEnvironment()
 	if err != nil {
 		return err

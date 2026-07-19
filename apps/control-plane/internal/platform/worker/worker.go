@@ -18,15 +18,15 @@ import (
 
 // Run continuously discovers, schedules, and reconciles Kubernetes Jobs.
 func Run(ctx context.Context) error {
-	if os.Getenv("KUBEQUEUE_DISABLE_KUBERNETES") == "true" {
-		<-ctx.Done()
-		return nil
-	}
-	store, err := persistence.Open(ctx, os.Getenv("KUBEQUEUE_DATABASE_URL"))
+	store, err := persistence.OpenCompatible(ctx, os.Getenv("KUBEQUEUE_DATABASE_URL"))
 	if err != nil {
 		return fmt.Errorf("open worker store: %w", err)
 	}
 	defer func() { _ = store.Close() }()
+	if os.Getenv("KUBEQUEUE_DISABLE_KUBERNETES") == "true" {
+		<-ctx.Done()
+		return nil
+	}
 	client, err := kubernetes.InCluster()
 	if err != nil {
 		return fmt.Errorf("configure Kubernetes client: %w", err)
